@@ -9,6 +9,7 @@
 
 class TCPSocket
 {
+
 public:
     TCPSocket();
     ~TCPSocket();
@@ -74,8 +75,8 @@ private:
     std::string m_ip;   //IP-адрес сервера
     int m_port;         //Порт сервера
     TCPSocketState m_state = NotInitialized;  //Состояние сокета
-    bool m_isNonBlocking = false;           //Флаг, указывающий на то, что сокет находится в неблокирующем режиме
-    std::string m_lastError = "Нет ошибок"; //Последняя ошибка, произошедшая при работе с сокетом
+    bool m_isNonBlocking = false;             //Флаг, указывающий на то, что сокет находится в неблокирующем режиме
+    std::string m_lastError = "Нет ошибок";   //Последняя ошибка, произошедшая при работе с сокетом
 
     void setState(TCPSocketState state);
     void setLastError(const std::string& errorMessage);
