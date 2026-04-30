@@ -33,23 +33,23 @@ public:
     };
 
 
-    std::string getIp() const;
-    void setIp(const std::string& ip);
+    std::string getLocalIp() const;
+    int getLocalPort() const;
 
-    int getPort() const;
-    void setPort(int port);
+    std::string getRemoteIp() const;
+    int getRemotePort() const;
 
     TCPSocketState getState() const;
 
-    bool getIsNonBlocking() const;
+    bool getIsNonBlocking();
     bool setIsNonBlocking(bool isNonBlocking);
 
     std::string getLastError() const;
 
-
-
-    //Эта функция инициализирует сокет
+    //Эта функция инициализирует сокет и привязывает его к переданному порту и IP адресу
     bool initialize();
+
+    bool bind(std::string ip, int port);
 
     //Эта функция подключается к серверу по IP-адресу и порту
     bool connect(std::string ip, int port);
@@ -71,9 +71,19 @@ public:
 
 
 private:
+    void reset();
+
     int m_socket = -1;  //Дескриптор сокета
-    std::string m_ip;   //IP-адрес сервера
-    int m_port;         //Порт сервера
+
+
+    std::string m_localIp;   //IP-адрес локальной стороны
+    int m_localPort = -1;    //Порт локальной стороны
+
+
+    std::string m_remoteIp;  //IP-адрес удалённой стороны
+    int m_remotePort = -1;   //Порт удалённой стороны
+
+
     TCPSocketState m_state = NotInitialized;  //Состояние сокета
     bool m_isNonBlocking = false;             //Флаг, указывающий на то, что сокет находится в неблокирующем режиме
     std::string m_lastError = "Нет ошибок";   //Последняя ошибка, произошедшая при работе с сокетом

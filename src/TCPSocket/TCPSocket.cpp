@@ -6,7 +6,7 @@
 
 TCPSocket::TCPSocket()
 {
-
+    initialize();
 }
 
 TCPSocket::~TCPSocket()
@@ -16,15 +16,18 @@ TCPSocket::~TCPSocket()
 
 TCPSocket::TCPSocket(TCPSocket&& other) :
            m_socket(other.m_socket),
-           m_ip(std::move(other.m_ip)),
-           m_port(other.m_port),
+           m_localIp(other.m_localIp),
+           m_localPort(other.m_localPort),
+           m_remoteIp(std::move(other.m_remoteIp)),
+           m_remotePort(other.m_remotePort),
            m_state(other.m_state),
            m_isNonBlocking(other.m_isNonBlocking),
            m_lastError(std::move(other.m_lastError))
 {
-    //Обнуляем исходный объект, чтобы он не закрыл сокет при своем уничтожении
+    //Обнуляем исходный объект
     other.m_socket = -1;
-    other.m_port = 0;
+    other.m_localPort = 0;
+    other.m_remotePort = 0;
     other.m_state = Error;
     other.m_isNonBlocking = false;
 }
@@ -39,39 +42,42 @@ TCPSocket& TCPSocket::operator=(TCPSocket&& other)
 
     //Перемещаем данные из other в this
     m_socket = other.m_socket;
-    m_ip = std::move(other.m_ip);
-    m_port = other.m_port;
+    m_localIp = std::move(other.m_localIp);
+    m_localPort = other.m_localPort;
+    m_remoteIp = std::move(other.m_remoteIp);
+    m_remotePort = other.m_remotePort;
     m_state = other.m_state;
     m_isNonBlocking = other.m_isNonBlocking;
     m_lastError = std::move(other.m_lastError);
 
     //Обнуляем исходный объект
     other.m_socket = -1;
-    other.m_port = 0;
+    other.m_localPort = 0;
+    other.m_remotePort = 0;
     other.m_state = Error;
     other.m_isNonBlocking = false;
 
     return *this;
 }
 
-std::string TCPSocket::getIp() const
+std::string TCPSocket::getLocalIp() const
 {
-    return m_ip;
+    return m_localIp;
 }
 
-void TCPSocket::setIp(const std::string& ip)
+int TCPSocket::getLocalPort() const
 {
-    m_ip = ip;
+    return m_localPort;
 }
 
-int TCPSocket::getPort() const
+std::string TCPSocket::getRemoteIp() const
 {
-    return m_port;
+    return m_remoteIp;
 }
 
-void TCPSocket::setPort(int port)
+int TCPSocket::getRemotePort() const
 {
-    m_port = port;
+    return m_remotePort;
 }
 
 TCPSocket::TCPSocketState TCPSocket::getState() const
@@ -79,8 +85,28 @@ TCPSocket::TCPSocketState TCPSocket::getState() const
     return m_state;
 }
 
-bool TCPSocket::getIsNonBlocking() const
+bool TCPSocket::getIsNonBlocking()
 {
+    //Пытаемся получить текущие флаги сокета
+    int flags = fcntl(m_socket, F_GETFL, 0);
+
+    //Если не удалось получить флаги
+    if(flags == -1)
+    {
+        //Не удалось получить флаги
+
+        //Устанавливаем состояние в Error
+        setState(Error);
+
+        //Записываем ошибку, произошедшую при попытке получить флаги сокета
+        setLastError("Не удалось получить флаги сокета, ошибка №" + std::to_string(errno) + ", расшифровка: " + std::string(strerror(errno)));
+
+        //Возвращаем false, так как не удалось получить флаги
+        return false;
+    }
+
+    m_isNonBlocking = flags & O_NONBLOCK;
+
     return m_isNonBlocking;
 }
 
@@ -150,6 +176,16 @@ std::string TCPSocket::getLastError() const
 
 bool TCPSocket::initialize()
 {
+    //Если сокет был инициализирован
+    if(m_socket != -1)
+    {
+        //Cокет был инициализирован
+
+        //Закрываем
+        close();
+    }
+
+
     //Пробуем создать сокет
     m_socket = socket(AF_INET, SOCK_STREAM, 0);
 
@@ -165,7 +201,6 @@ bool TCPSocket::initialize()
         //Возвращаем false, так как не удалось создать сокет
         return false;
     }
-
 
 
     //Пытаемся установить опцию SO_REUSEADDR для сокета
@@ -186,20 +221,32 @@ bool TCPSocket::initialize()
     }
 
 
+    //Удалось создать сокет, устанавливаем состояние в Initialized
+    setState(Initialized);
 
+    //Возвращаем true, так как удалось создать сокет
+    return true;
+}
+
+bool TCPSocket::bind(std::string ip, int port)
+{
     //Заполняем структуру sockaddr_in данными для привязки сокета к адресу
     struct sockaddr_in address;
-    memset(&address, 0, sizeof(address)); // Обнуляем структуру
-    address =
-    {
-        .sin_family = AF_INET,
-        .sin_port = htons(m_port),
-        .sin_addr.s_addr = inet_addr(m_ip.c_str())
-    };
+    memset(&address, 0, sizeof(address)); //Обнуляем структуру
+    address.sin_family = AF_INET;
+    address.sin_port = htons(port);
 
+    if(ip.size() < 0)
+    {
+        address.sin_addr.s_addr = INADDR_ANY;
+    }
+    else
+    {
+        address.sin_addr.s_addr = inet_addr(ip.c_str());
+    }
 
     //Пытаемся привязать сокет к адресу
-    result = bind(m_socket, (struct sockaddr*)&address, sizeof(address));
+    bool result = ::bind(m_socket, (struct sockaddr*)&address, sizeof(address));
 
     //Если не удалось привязать сокет к адресу
     if(result == -1)
@@ -215,10 +262,14 @@ bool TCPSocket::initialize()
     }
 
 
-    //Удалось создать сокет, устанавливаем состояние в Initialized
-    setState(Initialized);
+    m_localPort = port;
 
-    //Возвращаем true, так как удалось создать сокет
+    if(ip.size() < 0)
+    {
+        m_localIp = "0.0.0.0";
+    }
+
+    //Возвращаем true, так как удалось привязать сокет к адресу
     return true;
 }
 
@@ -337,8 +388,8 @@ bool TCPSocket::accept(TCPSocket& clientSocket)
     clientSocket.m_socket = clientSocketDescriptor;
     char client_ip[INET_ADDRSTRLEN];
     inet_ntop(AF_INET, &client_address.sin_addr, client_ip, sizeof(client_ip));
-    clientSocket.m_ip = std::string(client_ip);
-    clientSocket.m_port = ntohs(client_address.sin_port);
+    clientSocket.m_localIp = std::string(client_ip);
+    clientSocket.m_localPort = ntohs(client_address.sin_port);
     clientSocket.setState(Connected);
 
 
@@ -349,7 +400,7 @@ bool TCPSocket::accept(TCPSocket& clientSocket)
 void TCPSocket::close()
 {
     ::close(m_socket);
-    m_state = Disconnected;
+    reset();
 }
 
 int TCPSocket::send(uint8_t* data, size_t size)
@@ -394,9 +445,22 @@ int TCPSocket::send(uint8_t* data, size_t size)
     }
 }
 
-int TCPSocket::recv(uint8_t * data, size_t size)
+int TCPSocket::recv(uint8_t* data, size_t size)
 {
     return 0;
+}
+
+void TCPSocket::reset()
+{
+    setState(NotInitialized);
+
+    m_socket = -1;
+
+    std::string m_localIp = "";
+    m_localPort= -1;
+
+    std::string m_remoteIp = "";
+    m_remotePort= -1;
 }
 
 void TCPSocket::setState(TCPSocketState state)

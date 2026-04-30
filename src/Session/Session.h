@@ -19,8 +19,7 @@ public:
     Session(Session&& other);
     Session& operator=(Session&& other);
 
-    //Эта функция обработчик
-    virtual void onResponseRecieved(/*Тут должны быть параметры пока не придумал*/) = 0;
+
 };
 
 #endif //SESSION_H

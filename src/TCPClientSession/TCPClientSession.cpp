@@ -4,7 +4,7 @@
 #include <arpa/inet.h>
 
 TCPClientSession::TCPClientSession() :
-                  Session()
+                  ClientSession()
 {
 
 }
@@ -15,7 +15,7 @@ TCPClientSession::~TCPClientSession()
 }
 
 TCPClientSession::TCPClientSession(TCPClientSession&& other) :
-                  Session(std::move(other)),
+                  ClientSession(std::move(other)),
                   m_socket(std::move(other.m_socket))
 {
 
@@ -29,14 +29,34 @@ TCPClientSession& TCPClientSession::operator=(TCPClientSession&& other)
         return *this;
     }
 
-    Session::operator=(std::move(other));
+    ClientSession::operator=(std::move(other));
     m_socket = std::move(other.m_socket);
 
     return *this;
 }
 
-bool TCPClientSession::sendRequest(TCPClientRequest&& tcpClientRequest)
+bool TCPClientSession::connect(std::string serverIp, int serverPort)
 {
+    m_socket.initialize();
+}
+
+bool TCPClientSession::disconnect()
+{
+    return false;
+}
+
+bool TCPClientSession::sendRequest(ClientRequest&& request)
+{
+    //Попытаться привести к нужному типу
+    TCPClientRequest* tcpClientRequest = dynamic_cast<TCPClientRequest*>(&request);
+
+    if(!tcpClientRequest)
+    {
+        //Не тот тип
+        //Ошибка
+        return false;
+    }
+
     std::lock_guard<std::mutex> lockGuard(m_queueMutex);
 
     m_queue.push_back(std::move(tcpClientRequest));
