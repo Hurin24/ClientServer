@@ -10,7 +10,7 @@ class Session
 {
 
 public:
-    Session(Application* application);
+    Session();
     ~Session();
 
     Session(const Session&) = delete;
@@ -19,16 +19,8 @@ public:
     Session(Session&& other);
     Session& operator=(Session&& other);
 
-
-protected:
-    bool m_isWorking = true;                //Флаг, указывающий на то, что сессия работает
-
-    virtual bool execute();    //Рабочий цикл сессии, выполняется в отдельном потоке
-
-
-private:
-    std::thread m_thread;                   //Поток для обработки сессии
-    Application* m_application = nullptr;   //Указатель на приложение, которому принадлежит сессия
+    //Эта функция обработчик
+    virtual void onResponseRecieved(/*Тут должны быть параметры пока не придумал*/) = 0;
 };
 
 #endif //SESSION_H

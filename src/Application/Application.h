@@ -8,9 +8,8 @@ public:
     Application();
     ~Application();
 
-
     //Запускает выполнение приложения
-    void execute();
+    virtual int execute() = 0;
 };
 
 #endif //APPLICATION_H

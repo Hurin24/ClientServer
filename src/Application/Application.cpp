@@ -9,8 +9,3 @@ Application::~Application()
 {
 
 }
-
-void Application::execute()
-{
-
-}

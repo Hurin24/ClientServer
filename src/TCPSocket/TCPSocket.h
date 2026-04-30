@@ -67,7 +67,7 @@ public:
     int send(uint8_t* data, size_t size);
 
     //Эта принимает данные от удалённой стороны
-    bool recv(std::vector<uint8_t>& data);
+    int recv(uint8_t* data, size_t size);
 
 
 private:

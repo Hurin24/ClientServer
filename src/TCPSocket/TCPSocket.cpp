@@ -394,6 +394,11 @@ int TCPSocket::send(uint8_t* data, size_t size)
     }
 }
 
+int TCPSocket::recv(uint8_t * data, size_t size)
+{
+    return 0;
+}
+
 void TCPSocket::setState(TCPSocketState state)
 {
     m_state = state;
