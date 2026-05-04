@@ -17,7 +17,7 @@ namespace TCPClientServerProtocol
 
 
     //Статусы ответа
-    enum class ResponceStatus : uint8_t
+    enum class ResponseStatus : uint8_t
     {
         Success = 0,    //Успешно
         Failed = 1      //Не успешно
@@ -38,7 +38,7 @@ namespace TCPClientServerProtocol
     {
         size_t dataSize;        //Размер данных
         size_t id;              //Уникальный идентификатор ответа, совпадает с ID запроса
-        ResponceStatus status;  //Статус
+        ResponseStatus status;  //Статус
     };
     #pragma pack(pop)
 

@@ -161,7 +161,7 @@ bool TCPSocket::setIsNonBlocking(bool isNonBlocking)
     }
 
 
-    //Устанваливаем новое значение флага isNonBlocking
+    //Устанавливаем новое значение флага isNonBlocking
     m_isNonBlocking = isNonBlocking;
 
 
@@ -186,6 +186,8 @@ bool TCPSocket::initialize()
     }
 
 
+    std::unique_lock<std::mutex> unique_lock(m_socketMutex);
+
     //Пробуем создать сокет
     m_socket = socket(AF_INET, SOCK_STREAM, 0);
 
@@ -201,6 +203,8 @@ bool TCPSocket::initialize()
         //Возвращаем false, так как не удалось создать сокет
         return false;
     }
+
+    unique_lock.unlock();
 
 
     //Пытаемся установить опцию SO_REUSEADDR для сокета
@@ -285,8 +289,8 @@ bool TCPSocket::connect(std::string ip, int port)
     address =
     {
         .sin_family = AF_INET,
-        .sin_port = htons(m_port),
-        .sin_addr.s_addr = inet_addr(m_ip.c_str())
+        .sin_port = htons(port),
+        .sin_addr.s_addr = inet_addr(ip.c_str())
     };
 
 
@@ -403,7 +407,7 @@ void TCPSocket::close()
     reset();
 }
 
-int TCPSocket::send(uint8_t* data, ssize_t size)
+ssize_t TCPSocket::send(uint8_t* data, ssize_t size)
 {
     ssize_t totalSent = 0;
 
@@ -444,7 +448,7 @@ int TCPSocket::send(uint8_t* data, ssize_t size)
     return totalSent;
 }
 
-int TCPSocket::recv(uint8_t* data, ssize_t size)
+ssize_t TCPSocket::recv(uint8_t* data, ssize_t size)
 {
     ssize_t totalReceived = 0;
 
@@ -481,8 +485,17 @@ int TCPSocket::recv(uint8_t* data, ssize_t size)
     return totalReceived;
 }
 
+int TCPSocket::getSocketDescriptor()
+{
+    std::lock_guard<std::mutex> lockGuard(m_socketMutex);
+
+    return m_socket;
+}
+
 void TCPSocket::reset()
 {
+    std::lock_guard<std::mutex> lockGuard(m_socketMutex);
+
     setState(NotInitialized);
 
     m_socket = -1;

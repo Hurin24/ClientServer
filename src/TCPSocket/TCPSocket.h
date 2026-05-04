@@ -6,6 +6,8 @@
 #include <unistd.h>
 #include <vector>
 #include <cstdint>
+#include <atomic>
+#include <mutex>
 
 class TCPSocket
 {
@@ -64,15 +66,21 @@ public:
     void close();
 
     //Эта отправляет данные данные удалённой стороне
-    int send(uint8_t* data, ssize_t size);
+    ssize_t send(uint8_t* data, ssize_t size);
 
     //Эта принимает данные от удалённой стороны
-    int recv(uint8_t* data, ssize_t size);
+    ssize_t recv(uint8_t* data, ssize_t size);
 
+
+protected:
+    int getSocketDescriptor();
+    friend class TCPServerListenSession;
+    friend class TCPClientSession;
 
 private:
     void reset();
 
+    std::mutex m_socketMutex;
     int m_socket = -1;  //Дескриптор сокета
 
 

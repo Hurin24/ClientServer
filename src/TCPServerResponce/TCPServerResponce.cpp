@@ -1,90 +1,88 @@
-#include "TCPServerResponce.h"
+#include "TCPServerResponse.h"
 #include "../TCPClientRequest/TCPClientRequest.h"
 
 #include <cstring>
 #include <arpa/inet.h>
 
-TCPServerResponce::TCPServerResponce() :
-                   m_responceID(0),
-                   m_responceStatus(TCPClientServerProtocol::ResponceStatus::Success)
+TCPServerResponse::TCPServerResponse() :
+                   m_responseID(0),
+                   m_responseStatus(TCPClientServerProtocol::ResponseStatus::Success)
 {
 
 }
 
-TCPServerResponce::~TCPServerResponce()
+TCPServerResponse::~TCPServerResponse()
 {
 
 }
 
-TCPServerResponce::TCPServerResponce(TCPClientRequest&& other) :
-                   m_responceID(other.getRequestID()),
-                   m_responceStatus(TCPClientServerProtocol::ResponceStatus::Success),
+TCPServerResponse::TCPServerResponse(TCPClientRequest&& other) :
+                   m_responseID(other.getRequestID()),
+                   m_responseStatus(TCPClientServerProtocol::ResponseStatus::Success),
                    m_data(std::move(other.getData()))
 
 {
 
 }
 
-TCPServerResponce::TCPServerResponce(TCPServerResponce&& other) :
-                   m_responceID(other.m_responceID),
-                   m_responceStatus(TCPClientServerProtocol::ResponceStatus::Success),
+TCPServerResponse::TCPServerResponse(TCPServerResponse&& other) :
+                   m_responseID(other.m_responseID),
+                   m_responseStatus(TCPClientServerProtocol::ResponseStatus::Success),
                    m_data(std::move(other.m_data))
 {
-    other.m_responceID = 0;
+    other.m_responseID = 0;
 }
 
-TCPServerResponce& TCPServerResponce::operator=(TCPClientRequest&& other)
+TCPServerResponse& TCPServerResponse::operator=(TCPServerResponse&& other)
 {
     if(this != &other)
     {
-        m_responceID = other.getRequestID();
-        m_responceStatus = TCPClientServerProtocol::ResponceStatus::Success;
-        m_data = std::move(other.getData());
-    }
-
-    return *this;
-}
-
-TCPServerResponce& TCPServerResponce::operator=(TCPServerResponce&& other)
-{
-    if(this != &other)
-    {
-        m_responceID = other.m_responceID;
-        m_responceStatus = TCPClientServerProtocol::ResponceStatus::Success;
+        m_responseID = other.m_responseID;
+        m_responseStatus = TCPClientServerProtocol::ResponseStatus::Success;
         m_data = std::move(other.m_data);
 
-        other.m_responceID = 0;
+        other.m_responseID = 0;
     }
 
     return *this;
 }
 
-uint32_t TCPServerResponce::getRequestID() const
+uint32_t TCPServerResponse::getResponseID() const
 {
-    return m_responceID;
+    return m_responseID;
 }
 
-TCPClientServerProtocol::ResponceStatus TCPServerResponce::getResponceStatus() const
+TCPClientServerProtocol::ResponseStatus TCPServerResponse::getResponseStatus() const
 {
-    return m_responceStatus;
+    return m_responseStatus;
 }
 
-const std::vector<uint8_t>& TCPServerResponce::getData() const
+const std::vector<uint8_t>& TCPServerResponse::getData() const
 {
     return m_data;
 }
 
-void TCPServerResponce::setData(const std::vector<uint8_t>& data)
+TCPServerResponse::TCPServerResponseState TCPServerResponse::getState() const
+{
+    return m_state;
+}
+
+void TCPServerResponse::setData(const std::vector<uint8_t>& data)
 {
     m_data = data;
 }
 
-void TCPServerResponce::setData(std::vector<uint8_t>&& data)
+void TCPServerResponse::setData(std::vector<uint8_t>&& data)
 {
     m_data = std::move(data);
 }
 
-std::vector<uint8_t> TCPServerResponce::serialize() const
+void TCPServerResponse::setState(TCPServerResponseState newState)
+{
+    m_state = newState;
+}
+
+std::vector<uint8_t> TCPServerResponse::serialize() const
 {
     using namespace TCPClientServerProtocol;
 
@@ -93,8 +91,8 @@ std::vector<uint8_t> TCPServerResponce::serialize() const
     //Создаем заголовок ответа
     ResponseHeader header;
     header.dataSize = m_data.size() + sizeof(ResponseHeader);
-    header.id = m_responceID;
-    header.status = m_responceStatus;
+    header.id = m_responseID;
+    header.status = m_responseStatus;
 
 
     //Сериализуем заголовок в сетевой порядок байт
@@ -115,7 +113,7 @@ std::vector<uint8_t> TCPServerResponce::serialize() const
     return result;
 }
 
-std::shared_ptr<TCPServerResponce> TCPServerResponce::deserialize(std::vector<uint8_t>& data)
+std::shared_ptr<TCPServerResponse> TCPServerResponse::deserialize(std::vector<uint8_t>& data)
 {
     using namespace TCPClientServerProtocol;
 
@@ -142,8 +140,8 @@ std::shared_ptr<TCPServerResponce> TCPServerResponce::deserialize(std::vector<ui
     }
 
     //Создаем объект ответа
-    auto response = std::shared_ptr<TCPServerResponce>(new TCPServerResponce);
-    response->m_responceID = id;
+    auto response = std::shared_ptr<TCPServerResponse>(new TCPServerResponse);
+    response->m_responseID = id;
 
     //Копируем данные со смещением(без заголовка)
     if(dataSize > 0)

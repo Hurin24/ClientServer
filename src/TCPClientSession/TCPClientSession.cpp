@@ -1,9 +1,12 @@
 #include "TCPClientSession.h"
 
-#include <TCPClientServerProtocol>
+#include "TCPClientServerProtocol.h"
+#include "../TCPClientRequest/TCPClientRequest.h"
+#include "../TCPServerResponce/TCPServerResponce.h"
 
 #include <iostream>
 #include <arpa/inet.h>
+#include <sys/ioctl.h>
 
 TCPClientSession::TCPClientSession()
 {
@@ -13,7 +16,7 @@ TCPClientSession::TCPClientSession()
 
 TCPClientSession::~TCPClientSession()
 {
-    setIsWorking(false)
+    setIsWorking(false);
 
     if(m_sessionThread.joinable())
     {
@@ -21,12 +24,12 @@ TCPClientSession::~TCPClientSession()
     }
 }
 
-TCPClientSessionState TCPClientSession::getIsWorking() const
+bool TCPClientSession::getIsWorking() const
 {
     return m_isWorking;
 }
 
-TCPClientSessionState TCPClientSession::getState() const
+TCPClientSession::TCPClientSessionState TCPClientSession::getState() const
 {
     return m_state;
 }
@@ -39,6 +42,11 @@ std::string TCPClientSession::getServerIP() const
 int TCPClientSession::getServerPort() const
 {
     return m_serverPort;
+}
+
+std::string TCPClientSession::getLastError() const
+{
+    return m_lastError;
 }
 
 bool TCPClientSession::connect(std::string serverIP, int serverPort)
@@ -204,74 +212,14 @@ void TCPClientSession::sessionThread()
                 continue;
             }
 
-
             //Обработка приема данных
             if(FD_ISSET(socketFd, &readSet))
             {
-                //Переменная хранящая размер байт, которые планируется считать
-                int bytesAvailable = 0;
-                ioctl(socketFd, FIONREAD, &bytesAvailable);
-
-                if(bytesAvailable >= 0)
-                {
-                    //Если доступных данных больше чем размер буфера, увеличиваем буфер
-
-                    //Переменная хранящая реальный размер буфера в который считываем данные
-                    size_t freeSizeReceiveBuffer = receiveBuffer.capacity() - receiveBuffer.size();
-
-                    //Если свободное место в буфере меньше чем количество байт которое планируется считать
-                    if(static_cast<size_t>(bytesAvailable) > freeSizeReceiveBuffer)
-                    {
-                        //Увеличиваем размер свободного места в буфере
-                        receiveBuffer.reserve(receiveBuffer.size() + bytesAvailable);
-                    }
-
-                    //Считываем данные
-                    int bytesReceived = m_socket.recv(receiveBuffer.data() + receiveBuffer.size(), receiveBuffer.capacity());
-
-                    //Если удалось что то считать
-                    if(bytesReceived > 0)
-                    {
-                        //Обрезаем буфер до реально полученных данных
-                        receiveBuffer.resize(receiveBuffer.size() + bytesReceived);
-
-                        //Если достаточно байт для формирования пакета
-                        if(howMuchNeed(receiveBuffer) == 0)
-                        {
-                            //Достаточно байт для формирования пакета
-
-                            //Пытаемся извлечь все возможные ответы из полученных данных
-                            auto response = TCPServerResponce::deserialize(receiveBuffer);
-
-                            //Если TCPServerResponce валиден
-                            if(response)
-                            {
-                                std::lock_guard<std::mutex> lock_guard(m_requestQueueMutex);
-
-                                //Ищем соответствующий запрос в очереди ожидающих
-                                auto it = pendingRequests.begin();
-
-                                if(it->getRequestID() == response->getRequestID())
-                                {
-                                    //ToDo добавить функцию для обработки полученного ответа
-
-                                    //Удаляем запрос, который получил ответ
-                                    it = pendingRequests.erase(it);
-                                }
-                            }
-                        }
-                    }
-                    else
-                    {
-                        setLastError("Ошибка при приеме данных: " + m_socket.getLastError());
-                        setState(Error);
-                    }
-                }
+                receiveData();
             }
         }
 
-        //Проверяем таймаут ожидающего запроса
-        checkTimeoutRequestQueue();
+        sendData();
     }
 }
 
@@ -297,8 +245,10 @@ void TCPClientSession::setState(TCPClientSessionState newState)
     }
 }
 
-void TCPClientSession::receiveData()
+void TCPClientSession::receiveData(int socketDescriptor)
 {
+    using namespace TCPClientServerProtocol;
+
     //Если достигли конца буфера
     if(m_receivedData.size() == m_offsetReceivedData)
     {
@@ -306,12 +256,12 @@ void TCPClientSession::receiveData()
 
         //Узнаём сколько байт ожидается считать
         ssize_t bytesAvailable = 0;
-        ioctl(socketFd, FIONREAD, &bytesAvailable);
+        ioctl(socketDescriptor, FIONREAD, &bytesAvailable);
 
         if(bytesAvailable > 0)
         {
             //Увеличиваем размер свободного места в буфере
-            receiveBuffer.resize(receiveBuffer.size() + howMuchNeed(receiveBuffer));
+            m_receivedData.resize(m_receivedData.size() + howMuchNeed(m_receivedData));
         }
 
         //To Do тут нужно придумать ветку развития событий
@@ -319,7 +269,7 @@ void TCPClientSession::receiveData()
 
 
     //Считываем данные
-    int bytesReceived = m_socket.recv(receiveBuffer.data() + m_offsetReceivedData, howMuchNeed(receiveBuffer));
+    int bytesReceived = m_socket.recv(m_receivedData.data() + m_offsetReceivedData, howMuchNeed(m_receivedData));
 
     //Если произошла ошибка
     if(bytesReceived == -1)
@@ -333,14 +283,14 @@ void TCPClientSession::receiveData()
         m_offsetReceivedData += bytesReceived;
 
         //Если достаточно байт для формирования пакета
-        if(howMuchNeed(receiveBuffer) == 0)
+        if(howMuchNeed(m_receivedData) == 0)
         {
             //Достаточно байт для формирования пакета
 
             //Пытаемся извлечь все возможные ответы из полученных данных
-            auto response = TCPServerResponce::deserialize(receiveBuffer);
+            auto response = TCPServerResponse::deserialize(m_receivedData);
 
-            //Если TCPServerResponce валиден
+            //Если TCPServerResponse валиден
             if(response)
             {
                 //Получем итератор на первый в очереди запрос
@@ -356,7 +306,7 @@ void TCPClientSession::receiveData()
                 }
 
                 //Если ID полученного ответа от сервера равно ID первому в очереди запросу
-                if(iterator->getRequestID() == response->getRequestID())
+                if(iterator->getRequestID() == response->getResponseID())
                 {
                     //To Do нужно добавить функцию
 
@@ -399,7 +349,7 @@ void TCPClientSession::sendData()
             m_offsetSendingData = 0;
 
             //Устанавливаем состояние Sending
-            request.setState(TCPClientRequest::Sending);
+            iterator->setState(TCPClientRequest::Sending);
         }
         case TCPClientRequest::Sending:
         {
@@ -410,7 +360,7 @@ void TCPClientSession::sendData()
             if(bytesSent == -1)
             {
                 //Помечаем что запрос провалился
-                request.setState(TCPClientRequest::Failed);
+                iterator->setState(TCPClientRequest::Failed);
 
                 //Удаляем запрос
                 removeRequest(iterator);
@@ -480,7 +430,7 @@ bool TCPClientSession::checkIsTimeoutExpired(std::list<TCPClientRequest>::iterat
         return false;
     }
 
-    if(iterator->getState() != WaitingResponse)
+    if(iterator->getState() != TCPClientRequest::WaitingResponse)
     {
         return false;
     }
@@ -496,5 +446,10 @@ void TCPClientSession::removeRequest(std::list<TCPClientRequest>::iterator itera
     }
 
     m_requestQueue.erase(iterator);
+}
+
+void TCPClientSession::setLastError(const std::string& errorMessage)
+{
+    m_lastError = errorMessage;
 }
 

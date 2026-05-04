@@ -35,11 +35,13 @@ public:
         Error           //При работе с сессией произошла ошибка
     };
 
-    TCPClientSessionState getIsWorking() const; //Получить флаг, указывающий на то, что поток сессии работает
+    bool getIsWorking() const; //Получить флаг, указывающий на то, что поток сессии работает
     TCPClientSessionState getState() const;     //Получить состояние сессии
 
     std::string getServerIP() const;            //Получить IP-адрес сервера
     int getServerPort() const;                  //Получить порт сервера
+
+    std::string getLastError() const;
 
     //Эта функция выполняет подключение к серверу
     bool connect(std::string serverIP, int serverPort);
@@ -73,7 +75,7 @@ private:
     TCPSocket m_socket;                             //Сокет, связанный с сессией
 
 
-    void receiveData();
+    void receiveData(int socketDescriptor);
     void sendData();
 
 
@@ -91,6 +93,9 @@ private:
 
     std::vector<uint8_t> m_receivedData;            //Буфер для принимаемых данных
     ssize_t m_offsetReceivedData;                   //Офсет для принимаемых данных
+
+    std::string m_lastError = "Нет ошибок";         //Последняя ошибка, произошедшая при работе сессии
+    void setLastError(const std::string& errorMessage);
 };
 
 #endif //TCP_CLIENT_SESSION_H
