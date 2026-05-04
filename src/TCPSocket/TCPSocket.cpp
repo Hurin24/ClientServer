@@ -403,51 +403,82 @@ void TCPSocket::close()
     reset();
 }
 
-int TCPSocket::send(uint8_t* data, size_t size)
+int TCPSocket::send(uint8_t* data, ssize_t size)
 {
+    ssize_t totalSent = 0;
+
     while(true)
     {
         //Пытаемся отправить данные
-        size_t result = ::send(m_socket, data, size, 0);
+        ssize_t result = ::send(m_socket, data + totalSent, size - totalSent, 0);
 
         //Если не удалось отправить данные
         if(result == -1)
         {
-            //Не удалось отправить данные
-
             //Если сокет находится в неблокирующем режиме и операция отправки данных не может быть выполнена немедленно
             if(errno == EWOULDBLOCK || errno == EAGAIN)
             {
-                //Сокет находится в неблокирующем режиме и операция отправки данных не может быть выполнена немедленно
-
-                //Это не является ошибкой
-                //Пробуем отправить данные снова
-                continue;
+                return;
             }
             else
             {
-                //Сокет не находится в неблокирующем режиме и операция отправки данных может быть выполнена немедленно
-
-                //Устанавливаем состояние в Error
+                //Произошла ошибка
                 setState(Error);
-
-                //Записываем ошибку, произошедшую при отправке данных
                 setLastError("Не удалось отправить данные, ошибка №" + std::to_string(errno) +
                             ", расшифровка: " + std::string(strerror(errno)));
 
-                //Возвращаем -1, так как не удалось отправить данные
                 return result;
             }
         }
+        else
+        {
+            totalSent += result;
 
-        //Возвращаем результат
-        return result;
+            if(totalSent == size)
+            {
+                return totalSent;
+            }
+        }
     }
+
+    return totalSent;
 }
 
-int TCPSocket::recv(uint8_t* data, size_t size)
+int TCPSocket::recv(uint8_t* data, ssize_t size)
 {
-    return 0;
+    ssize_t totalReceived = 0;
+
+    while(true)
+    {
+        //Пытаемся принять данные
+        ssize_t result = ::recv(m_socket, data + totalReceived, size - totalReceived, 0);
+
+        //Если не удалось принять данные
+        if(result == -1)
+        {
+            //Если сокет находится в неблокирующем режиме и операция приема данных не может быть выполнена немедленно
+            if(errno == EWOULDBLOCK || errno == EAGAIN)
+            {
+                //Нечего считывать, выходим
+                break;
+            }
+            else
+            {
+                //Произошла ошибка
+                setLastError("Не удалось принять данные, ошибка №" + std::to_string(errno) +
+                            ", расшифровка: " + std::string(strerror(errno)));
+                setState(Error);
+
+                return -1;
+            }
+        }
+        else
+        {
+            totalReceived += result;
+        }
+    }
+
+    return totalReceived;
 }
 
 void TCPSocket::reset()

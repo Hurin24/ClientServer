@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <chrono>
 #include <atomic>
+#include <memory>
 
 class TCPClientRequest
 {
@@ -13,11 +14,11 @@ public:
     TCPClientRequest();
     ~TCPClientRequest();
 
-    TCPClientRequest(const TCPClientRequest&) = delete;
-    TCPClientRequest& operator=(const TCPClientRequest&) = delete;
-
     TCPClientRequest(TCPClientRequest&& other);
     TCPClientRequest& operator=(TCPClientRequest&& other);
+
+    //Эта функция создаёт новый ID для запроса
+    static size_t generateNewRequestID();
 
     enum TCPClientRequestState
     {
@@ -30,33 +31,36 @@ public:
     };
 
 
-    TCPClientRequestState getState() const;
-    const std::vector<uint8_t>& getData() const;
     uint32_t getRequestID() const;
+    const std::vector<uint8_t>& getData() const;
+
+    TCPClientRequestState getState() const;
     std::chrono::steady_clock::time_point getSendTime() const;
     int getTimeout() const;
 
-    // Сеттеры
-    void setState(TCPClientRequestState state);
+    void setRequestID(size_t ID);
     void setData(const std::vector<uint8_t>& data);
     void setData(std::vector<uint8_t>&& data);
-    void setRequestID(uint32_t ID);
+
+    void setState(TCPClientRequestState state);
     void setSendTime(std::chrono::steady_clock::time_point time);
     void setTimeout(int timeoutMs);
 
-    bool isTimeoutExpired() const;  // Проверяет, истек ли таймаут
+    bool isTimeoutExpired() const;  //Проверяет, истек ли таймаут
 
     //Сериализация
     std::vector<uint8_t> serialize() const;
-    bool deserialize(const std::vector<uint8_t>& data);
+    static std::shared_ptr<TCPClientRequest> deserialize(std::vector<uint8_t>& data);
 
 
 private:
-    static std::atomic<uint64_t> m_nextID;                          //Атомарный счетчик для генерации ID
+    static std::atomic<size_t> m_nextRequestID;                     //Атомарный счетчик для генерации ID
 
+    size_t m_requestID = 0;                                         //Уникальный идентификатор запроса
     std::vector<uint8_t> m_data;                                    //Данные запроса
+
     TCPClientRequestState m_state = Pending;                        //Состояние запроса
-    uint32_t m_requestId = 0;                                       //Уникальный идентификатор запроса
+
     std::chrono::steady_clock::time_point m_sendTime;               //Время отправки запроса
 
     int m_timeoutMs = 5000;                                         //Таймаут ожидания ответа (мс)

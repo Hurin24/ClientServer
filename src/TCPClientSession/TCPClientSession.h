@@ -35,12 +35,11 @@ public:
         Error           //При работе с сессией произошла ошибка
     };
 
+    TCPClientSessionState getIsWorking() const; //Получить флаг, указывающий на то, что поток сессии работает
     TCPClientSessionState getState() const;     //Получить состояние сессии
-
 
     std::string getServerIP() const;            //Получить IP-адрес сервера
     int getServerPort() const;                  //Получить порт сервера
-
 
     //Эта функция выполняет подключение к серверу
     bool connect(std::string serverIP, int serverPort);
@@ -53,26 +52,45 @@ public:
 
 
 private:
-    bool m_isWorking = true;                //Флаг, указывающий на то, что поток сессии работает
-    std::thread m_sessionThread;            //Поток, в котором выполняется рабочий цикл сессии
-
-    void sessionThread();                   //Функция, которая выполняется в отдельном потоке и в которой реализован рабочий цикл сессии
-
-
-    TCPClientSessionState m_state = Disconnected;    //Состояние сессии
-
-    void setState(TCPClientSessionState state);     //Установить состояние сессии
+    std::thread m_sessionThread;                    //Поток, в котором выполняется рабочий цикл сессии
+    std::condition_variable m_sessionThreadConditionVariable;
+    std::mutex m_sessionThreadConditionalVariableMutex;
+    void sessionThread();                           //Функция, которая выполняется в отдельном потоке и в которой реализован рабочий цикл сессии
 
 
-    std::string m_serverIP;                 //IP-адрес сервера
-    int m_serverPort;                       //Порт сервера
+    bool m_isWorking = true;                        //Флаг, указывающий на то, что поток сессии работает
+    void setIsWorking(bool newValue);               //Установить флаг указывающий на то, что поток сессии работает
 
 
-    TCPSocket m_socket;                     //Сокет, связанный с сессией
+    TCPClientSessionState m_state = Disconnected;   //Состояние сессии
+    void setState(TCPClientSessionState newState);  //Установить состояние сессии
 
 
-    std::mutex m_requestQueueMutex;                     //Мьютекс для защиты очереди запросов на отправку
-    std::list<TCPClientRequest> m_requestQueue;         //Очередь запросов на отправку
+    std::string m_serverIP;                         //IP-адрес сервера
+    int m_serverPort;                               //Порт сервера
+
+
+    TCPSocket m_socket;                             //Сокет, связанный с сессией
+
+
+    void receiveData();
+    void sendData();
+
+
+    //Функции для работы
+    void pushBack(TCPClientRequest&& clientRequest);
+    std::list<TCPClientRequest>::iterator getFrontRequest();
+    bool checkIsTimeoutExpired(std::list<TCPClientRequest>::iterator iterator);
+    void removeRequest(std::list<TCPClientRequest>::iterator iterator);
+
+    std::mutex m_requestQueueMutex;                 //Мьютекс для защиты очереди запросов на отправку
+    std::list<TCPClientRequest> m_requestQueue;     //Очередь запросов на отправку
+
+    std::vector<uint8_t> m_sendingData;             //Буфер для отправляемых данных
+    ssize_t m_offsetSendingData;                    //Офсет для принимаемых данных
+
+    std::vector<uint8_t> m_receivedData;            //Буфер для принимаемых данных
+    ssize_t m_offsetReceivedData;                   //Офсет для принимаемых данных
 };
 
 #endif //TCP_CLIENT_SESSION_H

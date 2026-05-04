@@ -1,11 +1,13 @@
-#ifndef TCP_SERVER_RESPONCE_H
-#define TCP_SERVER_RESPONCE_H
+#ifndef TCP_CLIENT_REQUEST_H
+#define TCP_CLIENT_REQUEST_H
+
+#include "TCPClientServerProtocol.h"
 
 #include <vector>
 #include <cstdint>
-#include <chrono>
-#include <atomic>
 #include <memory>
+
+class TCPClientRequest;
 
 class TCPServerResponce
 {
@@ -14,23 +16,29 @@ public:
     TCPServerResponce();
     ~TCPServerResponce();
 
-    TCPServerResponce(const TCPServerResponce&) = delete;
-    TCPServerResponce& operator=(const TCPServerResponce&) = delete;
+    TCPServerResponce(TCPServerResponce& other) = delete;
+    TCPServerResponce& operator=(TCPServerResponce& other) = delete;
 
+    TCPServerResponce(TCPClientRequest&& other);
     TCPServerResponce(TCPServerResponce&& other);
+    TCPServerResponce& operator=(TCPClientRequest&& other);
     TCPServerResponce& operator=(TCPServerResponce&& other);
 
+    uint32_t getRequestID() const;
+    TCPClientServerProtocol::ResponceStatus getResponceStatus() const;
+    const std::vector<uint8_t>& getData() const;
 
-    //Эта функция сериализует данные и возвращает их в виде вектора байт, готового для отправки по сети
+    void setData(const std::vector<uint8_t>& data);
+    void setData(std::vector<uint8_t>&& data);
+
+    //Сериализация
     std::vector<uint8_t> serialize() const;
-
-    //Эта функция десериализует данные и возвращает указатель на новый объект TCPServerResponce
-    std::shared_ptr<TCPServerResponce> deserialize(const std::vector<uint8_t>& data);
-
+    static std::shared_ptr<TCPServerResponce> deserialize(std::vector<uint8_t>& data);
 
 private:
-    uint64_t m_requestID = 0;       //Уникальный идентификатор ответа
-    std::vector<uint8_t> m_data;    //Данные ответа
+    size_t m_responceID = 0;                                        //Уникальный идентификатор ответа
+    TCPClientServerProtocol::ResponceStatus m_responceStatus = TCPClientServerProtocol::ResponceStatus::Success;    //Результат ответа сервера
+    std::vector<uint8_t> m_data;                                    //Данные ответа
 };
 
-#endif //TCP_SERVER_RESPONCE_H
+#endif //TCP_CLIENT_REQUEST_H

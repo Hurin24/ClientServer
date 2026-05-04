@@ -1,54 +1,62 @@
 #include "TCPClientRequest.h"
+#include "TCPClientServerProtocol.h"
+
 #include <chrono>
 #include <cstring>
 #include <arpa/inet.h>
 
 //Инициализация статического атомарного счетчика
-std::atomic<uint64_t> TCPClientRequest::m_nextID{1};  // Начинаем с 1
+std::atomic<uint64_t> TCPClientRequest::m_nextRequestID {1};  // Начинаем с 1
 
-TCPClientRequest::TCPClientRequest()
-    : m_state(Pending)
-    , m_requestId(0)
-    , m_timeoutMs(5000)
+TCPClientRequest::TCPClientRequest() :
+                  m_state(Pending),
+                  m_requestID(0),
+                  m_timeoutMs(5000)
 {
-    //Автоматически генерируем новый ID
-    m_requestId = m_nextID.fetch_add(1, std::memory_order_relaxed);
+
 }
 
 TCPClientRequest::~TCPClientRequest()
 {
+
 }
 
-TCPClientRequest::TCPClientRequest(TCPClientRequest&& other)
-    : m_data(std::move(other.m_data))
-    , m_state(other.m_state)
-    , m_requestId(other.m_requestId)
-    , m_sendTime(other.m_sendTime)
-    , m_timeoutMs(other.m_timeoutMs)
+TCPClientRequest::TCPClientRequest(TCPClientRequest&& other) :
+                  m_data(std::move(other.m_data)),
+                  m_state(other.m_state),
+                  m_requestID(other.m_requestID),
+                  m_sendTime(other.m_sendTime),
+                  m_timeoutMs(other.m_timeoutMs)
 {
-    // Обнуляем исходный объект
+    //Обнуляем исходный объект
     other.m_state = Pending;
-    other.m_requestId = 0;
+    other.m_requestID = 0;
     other.m_timeoutMs = 5000;
 }
 
 TCPClientRequest& TCPClientRequest::operator=(TCPClientRequest&& other)
 {
-    if (this != &other)
+    if(this != &other)
     {
         m_data = std::move(other.m_data);
         m_state = other.m_state;
-        m_requestId = other.m_requestId;
+        m_requestID = other.m_requestID;
         m_sendTime = other.m_sendTime;
         m_timeoutMs = other.m_timeoutMs;
 
         //Обнуляем исходный объект
         other.m_state = Pending;
-        other.m_requestId = 0;
+        other.m_requestID = 0;
         other.m_timeoutMs = 5000;
     }
 
     return *this;
+}
+
+size_t TCPClientRequest::generateNewRequestID()
+{
+    //Генерируем новый ID для запроса
+    return m_nextRequestID.fetch_add(1, std::memory_order_relaxed);
 }
 
 TCPClientRequest::TCPClientRequestState TCPClientRequest::getState() const
@@ -63,7 +71,7 @@ const std::vector<uint8_t>& TCPClientRequest::getData() const
 
 uint32_t TCPClientRequest::getRequestID() const
 {
-    return m_requestId;
+    return m_requestID;
 }
 
 std::chrono::steady_clock::time_point TCPClientRequest::getSendTime() const
@@ -91,9 +99,9 @@ void TCPClientRequest::setData(std::vector<uint8_t>&& data)
     m_data = std::move(data);
 }
 
-void TCPClientRequest::setRequestID(uint32_t ID)
+void TCPClientRequest::setRequestID(size_t ID)
 {
-    m_requestId = ID;
+    m_requestID = ID;
 }
 
 void TCPClientRequest::setSendTime(std::chrono::steady_clock::time_point time)
@@ -104,7 +112,7 @@ void TCPClientRequest::setSendTime(std::chrono::steady_clock::time_point time)
 void TCPClientRequest::setTimeout(int timeoutMs)
 {
     //Проверяем корректность таймаута
-    if (timeoutMs > 0)
+    if(timeoutMs > 0)
     {
         m_timeoutMs = timeoutMs;
     }
@@ -117,7 +125,7 @@ void TCPClientRequest::setTimeout(int timeoutMs)
 bool TCPClientRequest::isTimeoutExpired() const
 {
     //Таймаут проверяется только для запросов в состоянии ожидания ответа
-    if (m_state != WaitingResponse)
+    if(m_state != WaitingResponse)
     {
         return false;
     }
@@ -132,10 +140,8 @@ std::vector<uint8_t> TCPClientRequest::serialize() const
 {
     std::vector<uint8_t> result;
 
-    //[request_id (4 байта)] [data_size (4 байта)] [data]
-
     //Добавляем ID запроса
-    uint32_t requestIdNet = htonl(m_requestId);
+    uint32_t requestIdNet = htonl(m_requestID);
     const uint8_t* requestIdBytes = reinterpret_cast<const uint8_t*>(&requestIdNet);
     result.insert(result.end(), requestIdBytes, requestIdBytes + sizeof(requestIdNet));
 
@@ -153,44 +159,59 @@ std::vector<uint8_t> TCPClientRequest::serialize() const
     return result;
 }
 
-bool TCPClientRequest::deserialize(const std::vector<uint8_t>& data)
+std::shared_ptr<TCPClientRequest> TCPClientRequest::deserialize(std::vector<uint8_t>& data)
 {
-    //Проверяем минимальный размер (4 байта ID + 4 байта размера)
-    if(data.size() < 8)
+    using namespace TCPClientServerProtocol;
+
+    //Если данных для заголовка недостаточно
+    if(data.size() < sizeof(RequestHeader))
     {
-        return false;
+        return nullptr;
     }
 
-    size_t offset = 0;
+    //Кастуем начало данных к RequestHeader
+    RequestHeader* header = reinterpret_cast<RequestHeader*>(data.data());
 
-    //Читаем ID запроса
-    uint32_t requestIdNet;
-    std::memcpy(&requestIdNet, data.data() + offset, sizeof(requestIdNet));
-    m_requestId = ntohl(requestIdNet);
-    offset += sizeof(requestIdNet);
+    //Преобразуем из сетевого порядка байт в host порядок
+    uint64_t dataSize = be64toh(header->dataSize);
+    uint64_t id = be64toh(header->id);
 
-    //Читаем размер данных
-    uint32_t dataSizeNet;
-    std::memcpy(&dataSizeNet, data.data() + offset, sizeof(dataSizeNet));
-    uint32_t dataSize = ntohl(dataSizeNet);
-    offset += sizeof(dataSizeNet);
+    //Вычисляем полный размер пакета
+    size_t totalSize = sizeof(RequestHeader) + dataSize;
 
-    //Проверяем, что данных достаточно для чтения указанного размера
-    if(data.size() < offset + dataSize)
+    //Если данных для полного пакета недостаточно
+    if(data.size() < totalSize)
     {
-        return false;
+        return nullptr;
     }
 
-    //Читаем данные
+    //Создаем объект запроса
+    auto request = std::shared_ptr<TCPClientRequest>(new TCPClientRequest);
+    request->m_requestID = id;
+
+    //Копируем данные со смещением(без заголовка)
     if(dataSize > 0)
     {
-        m_data.resize(dataSize);
-        std::memcpy(m_data.data(), data.data() + offset, dataSize);
+        request->m_data.resize(dataSize);
+        std::copy(data.begin() + sizeof(RequestHeader),
+                  data.begin() + totalSize,
+                  request->m_data.begin());
+    }
+
+    //Перераспределяем оставшиеся данные в начало вектора
+    size_t remainingSize = data.size() - totalSize;
+
+    if(remainingSize > 0)
+    {
+        std::copy(data.begin() + totalSize,
+                  data.end(),
+                  data.begin());
+        data.resize(remainingSize);
     }
     else
     {
-        m_data.clear();
+        data.clear();
     }
 
-    return true;
+    return request;
 }

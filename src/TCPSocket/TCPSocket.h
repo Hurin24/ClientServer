@@ -64,10 +64,10 @@ public:
     void close();
 
     //Эта отправляет данные данные удалённой стороне
-    int send(uint8_t* data, size_t size);
+    int send(uint8_t* data, ssize_t size);
 
     //Эта принимает данные от удалённой стороны
-    int recv(uint8_t* data, size_t size);
+    int recv(uint8_t* data, ssize_t size);
 
 
 private:

@@ -17,28 +17,30 @@ namespace TCPClientServerProtocol
 
 
     //Статусы ответа
-    enum class Status : uint8_t
+    enum class ResponceStatus : uint8_t
     {
         Success = 0,    //Успешно
         Failed = 1      //Не успешно
     };
 
-
-    //Структура запроса
+    //Структура заголовка запроса
+    #pragma pack(push, 1)
     struct RequestHeader
     {
-        size_t dataSize = REQUEST_HEADER_SIZE;      //Размер данных
-        size_t id = 0;                              //Уникальный идентификатор запроса
+        size_t dataSize;        //Размер данных
+        size_t id;              //Уникальный идентификатор запроса
     };
+    #pragma pack(pop)
 
-
-    //Структура ответа
+    //Структура заголовка ответа
+    #pragma pack(push, 1)
     struct ResponseHeader
     {
-        size_t dataSize = RESPONSE_HEADER_SIZE;     //Размер данных
-        size_t id = 0;                              //Уникальный идентификатор запроса
-        Status status = Status::Success;            //Статус выполнения
+        size_t dataSize;        //Размер данных
+        size_t id;              //Уникальный идентификатор ответа, совпадает с ID запроса
+        ResponceStatus status;  //Статус
     };
+    #pragma pack(pop)
 
 
     //Функция для определения, сколько байт нужно дочитать
