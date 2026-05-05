@@ -286,12 +286,9 @@ bool TCPSocket::connect(std::string ip, int port)
     //Заполняем структуру sockaddr_in данными для привязки подключения сокета к серверу
     struct sockaddr_in address;
     memset(&address, 0, sizeof(address)); // Обнуляем структуру
-    address =
-    {
-        .sin_family = AF_INET,
-        .sin_port = htons(port),
-        .sin_addr.s_addr = inet_addr(ip.c_str())
-    };
+    address.sin_family = AF_INET;
+    address.sin_port = htons(port);
+    address.sin_addr.s_addr = inet_addr(ip.c_str());
 
 
     //Пытаемся подключиться к серверу
@@ -364,7 +361,6 @@ bool TCPSocket::accept(TCPSocket& clientSocket)
     {
         //Не удалось принять соединение
 
-
         if(errno == EWOULDBLOCK || errno == EAGAIN)
         {
             //Сокет находится в неблокирующем режиме и операция отправки данных не может быть выполнена немедленно
@@ -422,7 +418,7 @@ ssize_t TCPSocket::send(uint8_t* data, ssize_t size)
             //Если сокет находится в неблокирующем режиме и операция отправки данных не может быть выполнена немедленно
             if(errno == EWOULDBLOCK || errno == EAGAIN)
             {
-                return;
+                return totalSent;
             }
             else
             {

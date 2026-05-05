@@ -1,12 +1,14 @@
 #include "TCPClientSession.h"
 
-#include "TCPClientServerProtocol.h"
+#include "../TCPClientServerProtocol.h"
 #include "../TCPClientRequest/TCPClientRequest.h"
-#include "../TCPServerResponce/TCPServerResponce.h"
+#include "../TCPServerResponse/TCPServerResponse.h"
 
 #include <iostream>
 #include <arpa/inet.h>
 #include <sys/ioctl.h>
+#include <unistd.h>
+#include <string.h>
 
 TCPClientSession::TCPClientSession()
 {
@@ -22,6 +24,78 @@ TCPClientSession::~TCPClientSession()
     {
         m_sessionThread.join();
     }
+}
+
+TCPClientSession::TCPClientSession(TCPClientSession&& other)
+{
+    //Запоминаем значение isWorking у other
+    bool tempValue = other.getIsWorking();
+
+    //Останавливаем поток у other
+    other.setIsWorking(false);
+
+    if(other.m_sessionThread.joinable())
+    {
+        other.m_sessionThread.join();
+    }
+
+    m_isWorking = tempValue;
+    m_state = other.m_state;
+    m_serverIP = other.m_serverIP;
+    m_serverPort = other.m_serverPort;
+    m_socket = std::move(other.m_socket);
+    m_sendingData = std::move(other.m_sendingData);
+    m_offsetSendingData = other.m_offsetSendingData;
+    m_receivedData = std::move(other.m_receivedData);
+    m_offsetReceivedData = other.m_offsetReceivedData;
+    m_lastError = std::move(other.m_lastError);
+
+    //Запускаем рабочий цикл сессии в отдельном потоке
+    m_sessionThread = std::thread(&TCPClientSession::sessionThread, this);
+
+    //Обнуляем исходный объект
+    other.m_state = Error;
+    other.m_serverPort = 0;
+}
+
+TCPClientSession& TCPClientSession::operator=(TCPClientSession&& other)
+{
+    //Проверяем самоприсваивание
+    if(this == &other)
+    {
+        return *this;
+    }
+
+    //Запоминаем значение isWorking у other
+    bool tempValue = other.getIsWorking();
+
+    //Останавливаем поток у other
+    other.setIsWorking(false);
+
+    if(other.m_sessionThread.joinable())
+    {
+        other.m_sessionThread.join();
+    }
+
+    m_isWorking = tempValue;
+    m_state = other.m_state;
+    m_serverIP = other.m_serverIP;
+    m_serverPort = other.m_serverPort;
+    m_socket = std::move(other.m_socket);
+    m_sendingData = std::move(other.m_sendingData);
+    m_offsetSendingData = other.m_offsetSendingData;
+    m_receivedData = std::move(other.m_receivedData);
+    m_offsetReceivedData = other.m_offsetReceivedData;
+    m_lastError = std::move(other.m_lastError);
+
+    //Запускаем рабочий цикл сессии в отдельном потоке
+    m_sessionThread = std::thread(&TCPClientSession::sessionThread, this);
+
+    //Обнуляем исходный объект
+    other.m_state = Error;
+    other.m_serverPort = 0;
+
+    return *this;
 }
 
 bool TCPClientSession::getIsWorking() const
@@ -54,22 +128,21 @@ bool TCPClientSession::connect(std::string serverIP, int serverPort)
     //Устанавливаем состояние в Connecting
     setState(Connecting);
 
-
     //Пытаемся инициализировать сокет
     bool result = m_socket.initialize();
 
     //Если не удалось инициализировать сокет
     if(!result)
     {
-        //Не удалось инициализировать сокет
-
         //Записываем ошибку, произошедшую при отправке данных
         setLastError("Не удалось инициализировать сокет. Ошибка: " + m_socket.getLastError());
+
+        //Устанавливаем состояние в Error
+        setState(Error);
 
         //Возвращаем false, так как не удалось инициализировать сокет
         return false;
     }
-
 
     //Пытаемся подключиться к серверу
     result = m_socket.connect(serverIP, serverPort);
@@ -77,24 +150,22 @@ bool TCPClientSession::connect(std::string serverIP, int serverPort)
     //Если не удалось подключиться к серверу
     if(!result)
     {
-        //Не удалось подключиться к серверу
-
         //Записываем ошибку, произошедшую при подключении к серверу
         setLastError("Не удалось подключиться к серверу. Ошибка: " + m_socket.getLastError());
+
+        //Устанавливаем состояние в Error
+        setState(Error);
 
         //Возвращаем false, так как не удалось подключиться к сокету
         return false;
     }
 
-
     //Запоминаем IP-адрес и порт сервера
     m_serverIP = serverIP;
     m_serverPort = serverPort;
 
-
     //Устанавливаем состояние в Connected
     setState(Connected);
-
 
     //Возвращаем true, так как удалось подключиться к серверу
     return true;
@@ -116,7 +187,7 @@ bool TCPClientSession::disconnect()
 
 bool TCPClientSession::sendRequest(TCPClientRequest&& request)
 {
-    std::lock_guard<std::mutex> lockGuard(m_requestQueueMutex);
+    std::lock_guard<std::mutex> lock(m_requestQueueMutex);
 
     m_requestQueue.emplace_back(std::move(request));
 
@@ -127,20 +198,12 @@ void TCPClientSession::sessionThread()
 {
     using namespace TCPClientServerProtocol;
 
-    //Буфер для приема данных
-    std::vector<uint8_t> receivedData(sizeof(ResponseHeader))
-
-    //Буфер для отправки данных
-    std::vector<uint8_t> sendingData_;
-
-    //Оболочка для более удобного высчитывания оффсета
-    std::span<uint8_t> sendingData_
-
     //Таймаут для select (100 мс)
-    const int selectTimeoutMs = 100;
+    const int selectTimeoutMs = 50;
 
-    ////Наборы файловых дескрипторов
+    //Наборы файловых дескрипторов
     fd_set readSet;
+    fd_set writeSet;
     fd_set errorSet;
 
     while(m_isWorking)
@@ -159,43 +222,63 @@ void TCPClientSession::sessionThread()
             continue;
         }
 
-
         //Получаем дескриптор сокета
         int socketFd = m_socket.getSocketDescriptor();
 
         //Если сокет не инициализирован
         if(socketFd == -1)
         {
+            //Записываем ошибку
             setLastError("Сокет не инициализирован");
+
+            //Устанавливаем состояние в Error
             setState(Error);
+
+            //Переходим к следующей итерации цикла, так как произошла ошибка
             continue;
         }
-
 
         //Настраиваем таймаут для select
         struct timeval timeout;
         timeout.tv_sec = 0;
         timeout.tv_usec = selectTimeoutMs * 1000;
 
-
         //Настраиваем наборы файловых дескрипторов
         FD_ZERO(&readSet);
+        FD_ZERO(&writeSet);
         FD_ZERO(&errorSet);
 
         FD_SET(socketFd, &readSet);
         FD_SET(socketFd, &errorSet);
 
+        checkAndUpdateCurrentRequest();
 
-        //Вызываем select для проверки на чтение
-        int selectResult = select(socketFd + 1, &readSet, nullptr, &errorSet, &timeout);
+        TCPClientRequest::TCPClientRequestState requestState = m_currentRequest.getState();
+        switch(requestState)
+        {
+            case TCPClientRequest::Pending:
+            case TCPClientRequest::Sending:
+                FD_SET(socketFd, &writeSet);
+                break;
+            default:
+                break;
+        }
+
+        //Вызываем select
+        int selectResult = select(socketFd + 1, &readSet, &writeSet, &errorSet, &timeout);
 
         //Проверяем ошибки select
         if(selectResult == -1)
         {
             if(errno != EINTR)
             {
-                setLastError("Ошибка в select: " + std::string(strerror(errno)));
+                //Записываем ошибку
+                setLastError("Произошла ошибка при работе с select: " + std::string(strerror(errno)));
+
+                //Устанавливаем состояние в Error
                 setState(Error);
+
+                //Переходим к следующей итерации цикла, так как произошла ошибка
                 continue;
             }
         }
@@ -208,19 +291,44 @@ void TCPClientSession::sessionThread()
                 socklen_t errorCodeSize = sizeof(errorCode);
                 getsockopt(socketFd, SOL_SOCKET, SO_ERROR, &errorCode, &errorCodeSize);
 
-                setLastError("Ошибка в сокете: " + std::string(strerror(errorCode)));
+                //Записываем ошибку
+                setLastError("В сокете произошла ошибка: " + std::string(strerror(errorCode)));
+
+                //Устанавливаем состояние в Error
                 setState(Error);
+
+                //Переходим к следующей итерации цикла, так как произошла ошибка
                 continue;
             }
 
             //Обработка приема данных
             if(FD_ISSET(socketFd, &readSet))
             {
-                receiveData();
+                bool isOk = receiveData(socketFd);
+
+                if(!isOk)
+                {
+                    //Произошла ошибка при приеме данных, она уже обработана внутри receiveData
+
+                    //Переходим к следующей итерации цикла, так как произошла ошибка
+                    continue;
+                }
+            }
+
+            //Обработка отправки данных
+            if(FD_ISSET(socketFd, &writeSet))
+            {
+                bool isOk = sendData(socketFd);
+
+                if(!isOk)
+                {
+                    //Произошла ошибка при отправке данных, она уже обработана внутри sendData
+
+                    //Переходим к следующей итерации цикла, так как произошла ошибка
+                    continue;
+                }
             }
         }
-
-        sendData();
     }
 }
 
@@ -246,42 +354,42 @@ void TCPClientSession::setState(TCPClientSessionState newState)
     }
 }
 
-void TCPClientSession::receiveData(int socketDescriptor)
+bool TCPClientSession::receiveData(int socketDescriptor)
 {
     using namespace TCPClientServerProtocol;
 
+    //Узнаём сколько байт ещё требуется считать
+    ssize_t bytesAvailable = howMuchNeed(m_receivedData);
+
     //Если достигли конца буфера
-    if(m_receivedData.size() == m_offsetReceivedData)
+    if(m_receivedData.capacity() < m_receivedData.size() + bytesAvailable)
     {
-        //Достигли конца буфера
-
-        //Узнаём сколько байт ожидается считать
-        ssize_t bytesAvailable = 0;
-        ioctl(socketDescriptor, FIONREAD, &bytesAvailable);
-
-        if(bytesAvailable > 0)
-        {
-            //Увеличиваем размер свободного места в буфере
-            m_receivedData.resize(m_receivedData.size() + howMuchNeed(m_receivedData));
-        }
-
-        //To Do тут нужно придумать ветку развития событий
+        //Увеличиваем размер буфера для приема данных
+        m_receivedData.reserve(m_receivedData.size() + bytesAvailable);
     }
 
-
-    //Считываем данные
-    int bytesReceived = m_socket.recv(m_receivedData.data() + m_offsetReceivedData, howMuchNeed(m_receivedData));
+    //Считываем данные с учетом офсета
+    int bytesReceived = m_socket.recv(m_receivedData.data() + m_offsetReceivedData, bytesAvailable);
 
     //Если произошла ошибка
     if(bytesReceived == -1)
     {
-        setLastError("Ошибка при приеме данных: " + m_socket.getLastError());
+        //Записываем ошибку, произошедшую при приеме данных
+        setLastError("Не удалось считать данные. Ошибка: " + m_socket.getLastError());
+
+        //Устанавливаем состояние в Error
         setState(Error);
+
+        //Возвращаем false, так как произошла ошибка
+        return false;
     }
     else
     {
         //Увеличиваем офсет
         m_offsetReceivedData += bytesReceived;
+
+        //Увеличиваем размер буфера исходя из количества принятых байт
+        m_receivedData.resize(m_receivedData.size() + bytesReceived);
 
         //Если достаточно байт для формирования пакета
         if(howMuchNeed(m_receivedData) == 0)
@@ -294,63 +402,42 @@ void TCPClientSession::receiveData(int socketDescriptor)
             //Если TCPServerResponse валиден
             if(response)
             {
-                //Получем итератор на первый в очереди запрос
-                std::list<TCPClientRequest>::iterator iterator = getFrontRequest();
-
-                //Если он равен концу списка
-                if(iterator == m_requestQueue.end())
+                //Если ID полученного ответа от сервера равно ID текущего запроса
+                if(m_currentRequest.getRequestID() == response->getResponseID())
                 {
-                    //Он равен концу списка
-
-                    //Выходим
-                    return;
+                    //Изменяем статус текущего запроса
+                    m_currentRequest.setState(TCPClientRequest::ResponseReceived);
                 }
 
-                //Если ID полученного ответа от сервера равно ID первому в очереди запросу
-                if(iterator->getRequestID() == response->getResponseID())
-                {
-                    //To Do нужно добавить функцию
+                //Сбрасываем офсет
+                m_offsetReceivedData = 0;
 
-                    //Изменяем статус
-                    iterator->setState(TCPClientRequest::ResponseReceived);
-                }
+                //Сбрасываем размер буфера, так как все данные уже обработаны
+                m_receivedData.resize(0);
             }
         }
     }
+
+    return true;
 }
 
-void TCPClientSession::sendData()
+bool TCPClientSession::sendData(int socketDescriptor)
 {
-    //Получем итератор на первый в очереди запрос
-    std::list<TCPClientRequest>::iterator iterator = getFrontRequest();
-
-    //Если он равен концу списка
-    if(iterator == m_requestQueue.end())
-    {
-        //Он равен концу списка
-
-        //Выходим, нечего отправлять
-        return;
-    }
-
-
     //Исходя из текущего состояния, предпринимаем следующие действия
-    TCPClientRequest::TCPClientRequestState state = iterator->getState();
+    TCPClientRequest::TCPClientRequestState state = m_currentRequest.getState();
 
     switch(state)
     {
         case TCPClientRequest::Pending:
         {
             //Сериализуем запрос
-
-            //Запоминаем данные для отправки
-            m_sendingData = std::move(iterator->serialize());
+            m_sendingData = std::move(m_currentRequest.serialize());
 
             //Сбрасываем offset
             m_offsetSendingData = 0;
 
             //Устанавливаем состояние Sending
-            iterator->setState(TCPClientRequest::Sending);
+            m_currentRequest.setState(TCPClientRequest::Sending);
         }
         case TCPClientRequest::Sending:
         {
@@ -360,17 +447,14 @@ void TCPClientSession::sendData()
             //Если произошла ошибка
             if(bytesSent == -1)
             {
-                //Помечаем что запрос провалился
-                iterator->setState(TCPClientRequest::Failed);
-
-                //Удаляем запрос
-                removeRequest(iterator);
+                //Устанавливаем состояние Failed
+                m_currentRequest.setState(TCPClientRequest::Failed);
 
                 //Устанавливаем новое состояние сессии
                 setState(Error);
 
-                //Выходим
-                break;
+                //Возвращаем false, так как не удалось отправить данные
+                return false;
             }
             else
             {
@@ -378,25 +462,68 @@ void TCPClientSession::sendData()
                 m_offsetSendingData += bytesSent;
             }
 
-
             //Если больше нечего отправлять
             if(m_offsetSendingData == m_sendingData.size())
             {
-                iterator->setState(TCPClientRequest::WaitingResponse);
-                iterator->setSendTime(std::chrono::steady_clock::now());
+                //Больше нечего отправлять
+
+                //Устанавливаем состояние WaitingResponse
+                m_currentRequest.setState(TCPClientRequest::WaitingResponse);
+                m_currentRequest.setSendTime(std::chrono::steady_clock::now());
+
+                //Сбрасываем offset
                 m_offsetSendingData = 0;
+
+                //Очищаем буфер для отправки данных
+                m_sendingData.clear();
             }
             break;
         }
         case TCPClientRequest::WaitingResponse:
+        case TCPClientRequest::ResponseReceived:
+        case TCPClientRequest::Failed:
+        case TCPClientRequest::TimedOut:
+        {
+            //Ничего не делаем, эти состояния обрабатываются в checkAndUpdateCurrentRequest
+            break;
+        }
+        default:
+        {
+            break;
+        }
+    }
+
+    //Возвращаем true, так как отправка данных прошла успешно (даже если внутри произошла ошибка, мы её обработали и не нужно останавливать сессию)
+    return true;
+}
+
+bool TCPClientSession::checkAndUpdateCurrentRequest()
+{
+    std::lock_guard<std::mutex> lock(m_requestQueueMutex);
+
+    auto iterator = m_requestQueue.begin();
+
+    if(iterator == m_requestQueue.end())
+    {
+        return false;
+    }
+
+    bool wasChanged = false;
+
+    //Исходя из текущего состояния, предпринимаем следующие действия
+    TCPClientRequest::TCPClientRequestState state = iterator->getState();
+
+    switch(state)
+    {
+        case TCPClientRequest::Pending:
+        case TCPClientRequest::Sending:
+            break;
+        case TCPClientRequest::WaitingResponse:
         {
             //Проверяем, не вышло ли время
-            if(checkIsTimeoutExpired(iterator))
+            if(m_currentRequest.isTimeoutExpired())
             {
-                //Время вышло
-
-                //Удаляем запрос
-                removeRequest(iterator);
+                wasChanged = true;
             }
             break;
         }
@@ -404,49 +531,22 @@ void TCPClientSession::sendData()
         case TCPClientRequest::Failed:
         case TCPClientRequest::TimedOut:
         {
-            removeRequest(iterator);
+            wasChanged = true;
+            break;
         }
         default:
         {
-            removeRequest(iterator);
             break;
         }
     }
-}
 
-void TCPClientSession::pushBack(TCPClientRequest&& clientRequest)
-{
-    m_requestQueue.emplace_back(std::move(clientRequest));
-}
-
-std::list<TCPClientRequest>::iterator TCPClientSession::getFrontRequest()
-{
-    return m_requestQueue.begin();
-}
-
-bool TCPClientSession::checkIsTimeoutExpired(std::list<TCPClientRequest>::iterator iterator)
-{
-    if(iterator == m_requestQueue.end())
+    if(wasChanged)
     {
-        return false;
+        m_currentRequest = std::move(*iterator);
+        m_requestQueue.erase(iterator);
     }
 
-    if(iterator->getState() != TCPClientRequest::WaitingResponse)
-    {
-        return false;
-    }
-
-    return iterator->isTimeoutExpired();
-}
-
-void TCPClientSession::removeRequest(std::list<TCPClientRequest>::iterator iterator)
-{
-    if(iterator == m_requestQueue.end())
-    {
-        return;
-    }
-
-    m_requestQueue.erase(iterator);
+    return wasChanged;
 }
 
 void TCPClientSession::setLastError(const std::string& errorMessage)

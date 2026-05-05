@@ -1,8 +1,12 @@
 #include "TCPServerListenSession.h"
 
+#include "../TCPServerApplication/TCPServerApplication.h"
+#include "../TCPServerSession/TCPServerSession.h"
+
 #include <iostream>
 #include <arpa/inet.h>
 #include <sys/ioctl.h>
+#include <unistd.h>
 #include <string.h>
 
 TCPServerListenSession::TCPServerListenSession(TCPServerApplication* tcpServerApplication) :
@@ -35,28 +39,21 @@ TCPServerListenSession::TCPServerListenSession(TCPServerListenSession&& other)
         other.m_sessionThread.join();
     }
 
-
     m_tcpServerApplication = other.m_tcpServerApplication;
-
     m_isWorking = tempValue;
-
     m_state = other.m_state;
-
     m_listenIP = other.m_listenIP;
-    m_listenPort= other.m_listenPort;
-
+    m_listenPort = other.m_listenPort;
     m_listenSocket = std::move(other.m_listenSocket);
-
     m_lastError = std::move(other.m_lastError);
 
     //Запускаем рабочий цикл сессии в отдельном потоке
     m_sessionThread = std::thread(&TCPServerListenSession::sessionThread, this);
 
-
     //Обнуляем исходный объект
     other.m_tcpServerApplication = nullptr;
     other.m_state = Error;
-    other.m_listenPort = -1;
+    other.m_listenPort = 0;
 }
 
 TCPServerListenSession& TCPServerListenSession::operator=(TCPServerListenSession&& other)
@@ -78,28 +75,21 @@ TCPServerListenSession& TCPServerListenSession::operator=(TCPServerListenSession
         other.m_sessionThread.join();
     }
 
-
     m_tcpServerApplication = other.m_tcpServerApplication;
-
     m_isWorking = tempValue;
-
     m_state = other.m_state;
-
-    m_listenIP = std::move(other.m_listenIP);
+    m_listenIP = other.m_listenIP;
     m_listenPort = other.m_listenPort;
-
     m_listenSocket = std::move(other.m_listenSocket);
-
     m_lastError = std::move(other.m_lastError);
 
     //Запускаем рабочий цикл сессии в отдельном потоке
     m_sessionThread = std::thread(&TCPServerListenSession::sessionThread, this);
 
-
     //Обнуляем исходный объект
     other.m_tcpServerApplication = nullptr;
     other.m_state = Error;
-    other.m_listenPort = -1;
+    other.m_listenPort = 0;
 
     return *this;
 }
@@ -124,6 +114,11 @@ int TCPServerListenSession::getListenPort() const
     return m_listenPort;
 }
 
+std::string TCPServerListenSession::getLastError() const
+{
+    return m_lastError;
+}
+
 bool TCPServerListenSession::startListen(std::string listenIP, int listenPort)
 {
     //Устанавливаем состояние в StartingListening
@@ -135,6 +130,7 @@ bool TCPServerListenSession::startListen(std::string listenIP, int listenPort)
     if(!result)
     {
         setLastError("Не удалось инициализировать сокет. Ошибка: " + m_listenSocket.getLastError());
+        setState(Error);
         return false;
     }
 
@@ -144,6 +140,7 @@ bool TCPServerListenSession::startListen(std::string listenIP, int listenPort)
     if(!result)
     {
         setLastError("Не удалось привязать сокет. Ошибка: " + m_listenSocket.getLastError());
+        setState(Error);
         return false;
     }
 
@@ -153,6 +150,7 @@ bool TCPServerListenSession::startListen(std::string listenIP, int listenPort)
     if(!result)
     {
         setLastError("Не удалось перевести сокет в режим прослушивания. Ошибка: " + m_listenSocket.getLastError());
+        setState(Error);
         return false;
     }
 
@@ -164,6 +162,13 @@ bool TCPServerListenSession::startListen(std::string listenIP, int listenPort)
     setState(Listening);
 
     return true;
+}
+
+void TCPServerListenSession::waitForStop()
+{
+    std::unique_lock<std::mutex> uniqueLock(m_stateMutex);
+
+    m_stateConditionVariable.wait(uniqueLock, [this]() { return m_state == Stopped || m_state == Error; });
 }
 
 bool TCPServerListenSession::stopListen()
@@ -211,8 +216,13 @@ void TCPServerListenSession::sessionThread()
         //Если сокет не инициализирован
         if(socketFd == -1)
         {
+            //Записываем ошибку
             setLastError("Сокет не инициализирован");
+
+            //Устанавливаем состояние в Error
             setState(Error);
+
+            //Переходим к следующей итерации цикла
             continue;
         }
 
@@ -228,7 +238,6 @@ void TCPServerListenSession::sessionThread()
         FD_SET(socketFd, &readSet);
         FD_SET(socketFd, &errorSet);
 
-
         //Вызываем select
         int selectResult = select(socketFd + 1, &readSet, nullptr, &errorSet, &timeout);
 
@@ -237,8 +246,13 @@ void TCPServerListenSession::sessionThread()
         {
             if(errno != EINTR)
             {
-                setLastError("Ошибка в select: " + std::string(strerror(errno)));
+                //Записываем ошибку
+                setLastError("Произошла ошибка при работе с select: " + std::string(strerror(errno)));
+
+                //Устанавливаем состояние в Error
                 setState(Error);
+
+                //Переходим к следующей итерации цикла
                 continue;
             }
         }
@@ -251,25 +265,48 @@ void TCPServerListenSession::sessionThread()
                 socklen_t errorCodeSize = sizeof(errorCode);
                 getsockopt(socketFd, SOL_SOCKET, SO_ERROR, &errorCode, &errorCodeSize);
 
+                //Записываем ошибку
                 setLastError("Ошибка на слушающем сокете: " + std::string(strerror(errorCode)));
+
+                //Устанавливаем состояние в Error
                 setState(Error);
+
+                //Переходим к следующей итерации цикла
                 continue;
             }
-
 
             //Обработка нового подключения
             if(FD_ISSET(socketFd, &readSet))
             {
-                TCPSocket newTCPSocket;
+                TCPSocket newClientSocket;
 
-                if(m_listenSocket.accept(newTCPSocket))
+                if(m_listenSocket.accept(newClientSocket))
                 {
-                    TCPServerSession newTCPServerSession(newClientSocket);
-                    m_tcpServerApplication.pushSession();
+                    //Создаем новую сессию для клиента
+                    if(m_tcpServerApplication)
+                    {
+                        //Создаем новую сессию и перемещаем в нее сокет
+                        std::unique_ptr<TCPServerSession> newTCPServerSession(new TCPServerSession(m_tcpServerApplication, std::move(newClientSocket)));
+
+                        //Добавляем сессию в приложение
+                        m_tcpServerApplication->addSession(std::move(newTCPServerSession));
+                    }
+                    else
+                    {
+                        //Записываем ошибку
+                        setLastError("Указатель на TCPServerApplication равен nullptr");
+
+                        //Устанавливаем состояние в Error
+                        setState(Error);
+                    }
                 }
                 else
                 {
+                    //Записываем ошибку
                     setLastError("Ошибка при принятии подключения: " + m_listenSocket.getLastError());
+
+                    //Не устанавливаем состояние Error, так как это не критично для слушающей сессии
+                    //Просто логируем ошибку и продолжаем работу
                 }
             }
         }
@@ -289,11 +326,13 @@ void TCPServerListenSession::setIsWorking(bool newValue)
 
 void TCPServerListenSession::setState(TCPServerListenSessionState newState)
 {
-    std::lock_guard<std::mutex> lockGuard(m_sessionThreadConditionalVariableMutex);
+    std::lock_guard<std::mutex> lockGuard1(m_stateMutex);
+    std::lock_guard<std::mutex> lockGuard2(m_sessionThreadConditionalVariableMutex);
 
     if(m_state != newState)
     {
         m_state = newState;
+        m_stateConditionVariable.notify_all();
         m_sessionThreadConditionVariable.notify_all();
     }
 }

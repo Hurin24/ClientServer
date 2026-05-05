@@ -1,5 +1,5 @@
 #include "TCPClientRequest.h"
-#include "TCPClientServerProtocol.h"
+#include "../TCPClientServerProtocol.h"
 
 #include <chrono>
 #include <cstring>

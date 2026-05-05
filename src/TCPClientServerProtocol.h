@@ -44,7 +44,7 @@ namespace TCPClientServerProtocol
 
 
     //Функция для определения, сколько байт нужно дочитать
-    ssize_t howMuchNeed(const std::vector<uint8_t>& data)
+    inline ssize_t howMuchNeed(const std::vector<uint8_t>& data)
     {
         //Если данных меньше DATA_SIZE
         if(data.size() < DATA_SIZE)
@@ -83,4 +83,4 @@ namespace TCPClientServerProtocol
     }
 }
 
-#endif //TCP_CLIENT_SERVER_PROTOCOL_H
+#endif //TCP_CLIENT_SERVER_PROTOCOL_H/

@@ -1,9 +1,8 @@
-// TCPServerSession.h
 #ifndef TCP_SERVER_SESSION_H
 #define TCP_SERVER_SESSION_H
 
-#include "../ClientSession/ClientSession.h"
 #include "../TCPSocket/TCPSocket.h"
+#include "../TCPServerResponse/TCPServerResponse.h"
 
 #include <condition_variable>
 #include <list>
@@ -17,7 +16,7 @@ class TCPServerApplication;
 class TCPServerResponse;
 class TCPClientRequest;
 
-class TCPServerSession : public ClientSession
+class TCPServerSession
 {
 public:
     TCPServerSession(TCPServerApplication* tcpServerApplication, TCPSocket&& clientSocket);
@@ -32,7 +31,6 @@ public:
     enum TCPServerSessionState
     {
         Disconnected,   //Сессия не подключена к клиенту
-        Connecting,     //Сессия в процессе подключения
         Connected,      //Сессия подключена к клиенту
         Disconnecting,  //Сессия в процессе отключения
         Error           //При работе с сессией произошла ошибка
@@ -53,7 +51,7 @@ public:
     bool sendResponse(TCPServerResponse&& response);
 
 private:
-    TCPServerApplication* m_tcpServerApplication = nullptr;
+    TCPServerApplication* m_tcpServerApplication = nullptr;     //Указатель на TCPServerApplication
 
     std::thread m_sessionThread;                                //Поток, в котором выполняется рабочий цикл сессии
     std::condition_variable m_sessionThreadConditionVariable;
@@ -74,11 +72,7 @@ private:
     bool receiveData(int socketDescriptor);                     //Функция приема данных
     bool sendData(int socketDescriptor);                        //Функция отправки данных
 
-    //Функции для работы с очередью ответов
-    void pushBack(TCPServerResponse&& response);
-    std::list<TCPServerResponse>::iterator getFrontResponse();
-    bool checkIsTimeoutExpired(std::list<TCPServerResponse>::iterator iterator);
-    void removeResponse(std::list<TCPServerResponse>::iterator iterator);
+    bool checkAndUpdateCurrentResponse();                       //Обновить текущий ответ, который отправляется клиенту
 
     std::mutex m_responseQueueMutex;                            //Мьютекс для защиты очереди ответов на отправку
     std::list<TCPServerResponse> m_responseQueue;               //Очередь ответов на отправку
@@ -92,7 +86,7 @@ private:
     ssize_t m_offsetReceivedData = 0;                           //Офсет для принимаемых данных
 
     std::string m_lastError = "Нет ошибок";                     //Последняя ошибка, произошедшая при работе сессии
-    void setLastError(const std::string& errorMessage);
+    void setLastError(const std::string& errorMessage);         //Функция записи последней ошибки
 };
 
 #endif //TCP_SERVER_SESSION_H

@@ -75,6 +75,7 @@ public:
 protected:
     int getSocketDescriptor();
     friend class TCPServerListenSession;
+    friend class TCPServerSession;
     friend class TCPClientSession;
 
 private:

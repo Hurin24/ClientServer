@@ -1,6 +1,11 @@
 #include "TCPClientApplication.h"
 
+#include "../TCPClientRequest/TCPClientRequest.h"
+#include "../TCPClientSession/TCPClientSession.h"
+
 #include <utility>
+#include <iostream>
+#include <arpa/inet.h>
 
 TCPClientApplication::TCPClientApplication()
 {
@@ -12,122 +17,82 @@ TCPClientApplication::~TCPClientApplication()
 
 }
 
-TCPClientApplication::TCPClientApplication(TCPClientApplication&& other) :
-                      Application(std::move(other))
+int TCPClientApplication::execute()
 {
+    std::string serverIp;
+    int serverPort;
 
-}
-
-TCPClientApplication& TCPClientApplication::operator=(TCPClientApplication&& other)
-{
-    //Проверяем самоприсваивание
-    if(this == &other)
-    {
-        return *this;
-    }
-
-    Application::operator=(std::move(other));
-
-    return *this;
-}
-
-/*
     std::cout << "Введите IPv4 адрес сервера, к которому хотите подключиться: ";
-    std::cin >> m_serverIp;
+    std::cin >> serverIp;
     std::cout << std::endl;
 
     struct sockaddr_in sa_ipv4;
 
-    if(inet_pton(AF_INET, m_serverIp.c_str(), &sa_ipv4.sin_addr) == 1)
+    if(inet_pton(AF_INET, serverIp.c_str(), &sa_ipv4.sin_addr) == 1)
     {
         //Выводим ошибку, произошедшую при попытке инициализировать сокет
         std::cout << "Ошибка: введён не валидный IPv4 адрес" << std::endl;
 
         //Завершаем выполнение функции, так как был введён не валидный IPv4 адрес
-        return false;
+        return 1;
     }
 
 
     std::cout << "Введите порт сервера, к которому хотите подключиться: ";
-    std::cin >> m_serverPort;
+    std::cin >> serverPort;
     std::cout << std::endl;
 
-    m_socket.setIp(m_serverIp);
-    m_socket.setPort(m_serverPort);
 
-    //Пробуем инициализировать сокет
-    bool result = m_socket.initialize();
+    //Создаём сессию
+    TCPClientSession tcpClientSession;
 
-    //Если не удалось инициализировать сокет
-    if(!result)
-    {
-        //Не удалось инициализировать сокет
-
-        //Выводим ошибку, произошедшую при попытке инициализировать сокет
-        std::cout << "Не удалось инициализировать сокет, ошибка: " << m_socket.getLastError() << std::endl;
-
-        //Завершаем выполнение функции, так как не удалось инициализировать сокет
-        return result;
-    }
-
-    //Пробуем подключиться к серверу
-    result = m_socket.connect(m_serverIp, m_serverPort);
+    //Производим попытку подключения к серверу
+    bool result = tcpClientSession.connect(serverIp,  serverPort);
 
     //Если не удалось подключиться к серверу
     if(!result)
     {
         //Не удалось подключиться к серверу
 
-        //Выводим ошибку, произошедшую при попытке подключиться к серверу
-        std::cout << "Не удалось подключиться к серверу, ошибка: " << m_socket.getLastError() << std::endl;
+        //Выводим ошибку
+        std::cout << tcpClientSession.getLastError() << std::endl;
 
-        //Завершаем выполнение функции, так как не удалось подключиться к серверу
-        return result;
+        //Возвращаем результат работы приложения
+        return 1;
     }
-
 
     std::cout << "Вводите символы которые хотите отправить на сервер:" << std::endl;
 
     std::string buffer;
 
     //Пока сессия в работе
-    while(m_isWorking)
+    while(true)
     {
         //Считываем символы, которые хотим отправить на сервер
         std::cin >> buffer;
+        std::cout << std::endl;
 
-        //Пытаемся отправить данные на сервер
-        //Пока не отправим все данные
-        size_t bytesSend = 0;
-        while(bytesSend < buffer.size())
+        //Если состояние сессии не Connected
+        if(tcpClientSession.getState() != TCPClientSession::TCPClientSessionState::Connected)
         {
-            //Отправляем данные на сервер
-            int result = m_socket.send(reinterpret_cast<uint8_t*>(buffer.data()) + bytesSend, buffer.size() - bytesSend);
+            //Состояние сессии не Connected
 
-            if(result == -1)
-            {
-                //Не удалось отправить данные
+            //Выводим ошибку
+            std::cout << tcpClientSession.getLastError() << std::endl;
 
-                //Выводим ошибку, произошедшую при попытке отправить данные
-                std::cout << "Не удалось отправить данные, ошибка: " << m_socket.getLastError() << std::endl;
-
-                if(errno == EWOULDBLOCK || errno == EAGAIN)
-                {
-                    //Сокет находится в неблокирующем режиме и операция отправки данных не может быть выполнена немедленно
-
-                    //Это не является ошибкой
-                    //Пробуем отправить данные снова
-                    continue;
-                }
-
-                //Завершаем выполнение функции, так как не удалось отправить данные
-                return false;
-            }
-
-            bytesSend += result;
+            //Возвращаем результат работы приложения
+            return 1;
         }
 
+        std::vector<uint8_t> vec(buffer.begin(), buffer.end());
 
-        result = m_socket.send(buffer.data(), buffer.size());
+        //Формируем запрос
+        TCPClientRequest newTCPClientRequest;
+        newTCPClientRequest.setData(std::move(vec));
+
+        //Отправляем запрос
+        tcpClientSession.sendRequest(std::move(newTCPClientRequest));
     }
-*/
+
+    return 0;
+}

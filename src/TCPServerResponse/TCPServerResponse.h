@@ -1,7 +1,7 @@
 #ifndef TCP_SERVER_RESPONSE_H
 #define TCP_SERVER_RESPONSE_H
 
-#include "TCPClientServerProtocol.h"
+#include "../TCPClientServerProtocol.h"
 
 #include <vector>
 #include <cstdint>

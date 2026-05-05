@@ -1,8 +1,8 @@
 // TCPServerSession.cpp
 #include "TCPServerSession.h"
-#include "TCPServerApplication.h"
-#include "TCPClientServerProtocol.h"
-#include "../TCPServerResponse/TCPServerResponse.h"
+
+#include "../TCPClientServerProtocol.h"
+#include "../TCPServerApplication/TCPServerApplication.h"
 #include "../TCPClientRequest/TCPClientRequest.h"
 
 #include <iostream>
@@ -168,10 +168,6 @@ bool TCPServerSession::disconnect()
     //Закрываем сокет
     m_socket.close();
 
-    //Очищаем очередь ответов
-    std::lock_guard<std::mutex> lock(m_responseQueueMutex);
-    m_responseQueue.clear();
-
     //Устанавливаем состояние в Disconnected
     setState(Disconnected);
 
@@ -246,10 +242,18 @@ void TCPServerSession::sessionThread()
         FD_SET(socketFd, &readSet);
         FD_SET(socketFd, &errorSet);
 
-        TCPServerResponse responseState = m_currentResponse.getState();
-        if(responseState == TCPServerResponse::Pending || mresponseState == TCPServerResponse::Sending)
+
+        checkAndUpdateCurrentResponse();
+
+        TCPServerResponse::TCPServerResponseState responseState = m_currentResponse.getState();
+        switch(responseState)
         {
-            FD_SET(socketFd, &writeSet);
+            case TCPServerResponse::TCPServerResponseState::Pending:
+            case TCPServerResponse::TCPServerResponseState::Sending:
+                FD_SET(socketFd, &writeSet);
+                break;
+            default:
+                break;
         }
 
 
@@ -391,7 +395,9 @@ bool TCPServerSession::receiveData(int socketDescriptor)
             //Если TCPClientRequest валиден
             if(request)
             {
-                //To Do добавить функццию обработчик получения запроса
+                //Отправляем обратно
+                TCPServerResponse tcpServerResponse(std::move(*request));
+                sendResponse(std::move(tcpServerResponse));
 
                 //Сбрасываем офсет
                 m_offsetReceivedData = 0;
@@ -475,27 +481,48 @@ bool TCPServerSession::sendData(int socketDescriptor)
     return true;
 }
 
-void TCPServerSession::pushBack(TCPServerResponse&& response)
-{
-    m_responseQueue.emplace_back(std::move(response));
-}
-
-std::list<TCPServerResponse>::iterator TCPServerSession::getFrontResponse()
+bool TCPServerSession::checkAndUpdateCurrentResponse()
 {
     std::lock_guard<std::mutex> lock(m_responseQueueMutex);
-    return m_responseQueue.begin();
-}
 
-void TCPServerSession::removeResponse(std::list<TCPServerResponse>::iterator iterator)
-{
-    std::lock_guard<std::mutex> lock(m_responseQueueMutex);
+    auto iterator = m_responseQueue.begin();
 
     if(iterator == m_responseQueue.end())
     {
-        return;
+        return false;
     }
 
-    m_responseQueue.erase(iterator);
+     bool wasChanged = false;
+
+    //Исходя из текущего состояния, предпринимаем следующие действия
+    TCPServerResponse::TCPServerResponseState state = iterator->getState();
+
+    switch(state)
+    {
+        case TCPServerResponse::Pending:
+        case TCPServerResponse::Sending:
+        {
+            break;
+        }
+        case TCPServerResponse::WasSended:
+        case TCPServerResponse::Failed:
+        {
+            wasChanged = true;
+            break;
+        }
+        default:
+        {
+            break;
+        }
+    }
+
+    if(wasChanged)
+    {
+        m_currentResponse = std::move(*iterator);
+        m_responseQueue.erase(iterator);
+    }
+
+    return wasChanged;
 }
 
 void TCPServerSession::setLastError(const std::string& errorMessage)

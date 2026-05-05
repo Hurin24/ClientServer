@@ -1,18 +1,20 @@
 #ifndef TCP_SERVER_LISTEN_SESSION_H
 #define TCP_SERVER_LISTEN_SESSION_H
 
-#include "../ClientSession/ClientSession.h"
 #include "../TCPSocket/TCPSocket.h"
 
 #include <condition_variable>
 #include <list>
 #include <mutex>
 #include <thread>
+#include <chrono>
+#include <vector>
 #include <memory>
 
 class TCPServerApplication;
+class TCPServerSession;
 
-class TCPServerListenSession : public ClientSession
+class TCPServerListenSession
 {
 
 public:
@@ -34,14 +36,18 @@ public:
         Error               //При работе с сессией произошла ошибка
     };
 
-    bool getIsWorking() const;                  //Получить флаг, указывающий на то, что поток сессии работает
-    TCPServerListenSessionState getState() const; //Получить состояние сессии
+    bool getIsWorking() const;                      //Получить флаг, указывающий на то, что поток сессии работает
+    TCPServerListenSessionState getState() const;   //Получить состояние сессии
 
-    std::string getListenIP() const;            //Получить IP-адрес для прослушивания
-    int getListenPort() const;                  //Получить порт для прослушивания
+    std::string getListenIP() const;                //Получить IP-адрес для прослушивания
+    int getListenPort() const;                      //Получить порт для прослушивания
+
+    std::string getLastError() const;
 
     //Эта функция запускает прослушивание на указанном IP и порту
     bool startListen(std::string listenIP, int listenPort);
+
+    void waitForStop();
 
     //Эта функция останавливает прослушивание
     bool stopListen();
@@ -59,6 +65,8 @@ private:
     void setIsWorking(bool newValue);                           //Установить флаг
 
     TCPServerListenSessionState m_state = Stopped;              //Состояние сессии
+    std::mutex m_stateMutex;
+    std::condition_variable m_stateConditionVariable;
     void setState(TCPServerListenSessionState newState);        //Установить состояние сессии
 
     std::string m_listenIP;                                     //IP-адрес для прослушивания
@@ -67,7 +75,7 @@ private:
     TCPSocket m_listenSocket;                                   //Слушающий сокет
 
     std::string m_lastError = "Нет ошибок";                     //Последняя ошибка, произошедшая при работе сессии
-    void setLastError(const std::string& errorMessage);
+    void setLastError(const std::string& errorMessage);         //Функция записи последней ошибки
 };
 
 #endif //TCP_SERVER_LISTEN_SESSION_H
