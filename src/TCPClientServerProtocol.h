@@ -62,8 +62,6 @@ namespace TCPClientServerProtocol
         //Читаем размер данных
         ssize_t dataSize;
         std::memcpy(&dataSize, data.data(), DATA_SIZE);
-        dataSize = be64toh(dataSize);
-
 
         //Если данных достаточно
         if(data.size() >= dataSize)
@@ -74,9 +72,7 @@ namespace TCPClientServerProtocol
             return 0;
         }
 
-
         //Данных не достаточно
-
 
         //Возвращаем, сколько байт нужно дочитать для получения полного запроса
         return dataSize - data.size();

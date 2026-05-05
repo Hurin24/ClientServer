@@ -99,7 +99,7 @@ bool TCPSocket::getIsNonBlocking()
         setState(Error);
 
         //Записываем ошибку, произошедшую при попытке получить флаги сокета
-        setLastError("Не удалось получить флаги сокета, ошибка №" + std::to_string(errno) + ", расшифровка: " + std::string(strerror(errno)));
+        setLastError("Не удалось получить флаги сокета, ошибка № " + std::to_string(errno) + ", расшифровка: " + std::string(strerror(errno)));
 
         //Возвращаем false, так как не удалось получить флаги
         return false;
@@ -124,7 +124,7 @@ bool TCPSocket::setIsNonBlocking(bool isNonBlocking)
         setState(Error);
 
         //Записываем ошибку, произошедшую при попытке получить флаги сокета
-        setLastError("Не удалось получить флаги сокета, ошибка №" + std::to_string(errno) + ", расшифровка: " + std::string(strerror(errno)));
+        setLastError("Не удалось получить флаги сокета, ошибка № " + std::to_string(errno) + ", расшифровка: " + std::string(strerror(errno)));
 
         //Возвращаем false, так как не удалось получить флаги
         return false;
@@ -154,7 +154,7 @@ bool TCPSocket::setIsNonBlocking(bool isNonBlocking)
         setState(Error);
 
         //Записываем ошибку, произошедшую при попытке установить флаги сокета
-        setLastError("Не удалось установить флаги сокета, ошибка №" + std::to_string(errno) + ", расшифровка: " + std::string(strerror(errno)));
+        setLastError("Не удалось установить флаги сокета, ошибка № " + std::to_string(errno) + ", расшифровка: " + std::string(strerror(errno)));
 
         //Возвращаем false, так как не удалось получить флаги
         return false;
@@ -198,7 +198,7 @@ bool TCPSocket::initialize()
         setState(Error);
 
         //Записываем ошибку, произошедшую при попытке создать сокет
-        setLastError("Не удалось создать сокет, ошибка №" + std::to_string(errno) + ", расшифровка: " + std::string(strerror(errno)));
+        setLastError("Не удалось создать сокет, ошибка № " + std::to_string(errno) + ", расшифровка: " + std::string(strerror(errno)));
 
         //Возвращаем false, так как не удалось создать сокет
         return false;
@@ -218,7 +218,7 @@ bool TCPSocket::initialize()
         setState(Error);
 
         //Записываем ошибку, произошедшую при попытке установить опцию SO_REUSEADDR для сокета
-        setLastError("Не удалось установить опцию SO_REUSEADDR для сокета, ошибка №" + std::to_string(errno) + ", расшифровка: " + std::string(strerror(errno)));
+        setLastError("Не удалось установить опцию SO_REUSEADDR для сокета, ошибка № " + std::to_string(errno) + ", расшифровка: " + std::string(strerror(errno)));
 
         //Возвращаем false, так как не удалось установить опцию SO_REUSEADDR для сокета
         return false;
@@ -259,7 +259,7 @@ bool TCPSocket::bind(std::string ip, int port)
         setState(Error);
 
         //Записываем ошибку, произошедшую при попытке привязать сокет к адресу
-        setLastError("Не удалось привязать сокет к адресу, ошибка №" + std::to_string(errno) + ", расшифровка: " + std::string(strerror(errno)));
+        setLastError("Не удалось привязать сокет к адресу, ошибка № " + std::to_string(errno) + ", расшифровка: " + std::string(strerror(errno)));
 
         //Возвращаем false, так как не удалось привязать сокет к адресу
         return false;
@@ -303,7 +303,7 @@ bool TCPSocket::connect(std::string ip, int port)
         setState(Error);
 
         //Записываем ошибку, произошедшую при попытке подключиться к серверу
-        setLastError("Не удалось подключиться к серверу, ошибка №" + std::to_string(errno) + ", расшифровка: " + std::string(strerror(errno)));
+        setLastError("Не удалось подключиться к серверу, ошибка № " + std::to_string(errno) + ", расшифровка: " + std::string(strerror(errno)));
 
         //Возвращаем false, так как не удалось подключиться к серверу
         return false;
@@ -333,7 +333,7 @@ bool TCPSocket::listen()
         setState(Error);
 
         //Записываем ошибку, произошедшую при попытке перевести сокет в режим прослушивания входящих соединений
-        setLastError("Не удалось перевести сокет в режим прослушивания входящих соединений, ошибка №" + std::to_string(errno) + ", расшифровка: " + std::string(strerror(errno)));
+        setLastError("Не удалось перевести сокет в режим прослушивания входящих соединений, ошибка № " + std::to_string(errno) + ", расшифровка: " + std::string(strerror(errno)));
 
         //Возвращаем false, так как не удалось перевести сокет в режим прослушивания входящих соединений
         return false;
@@ -354,7 +354,7 @@ bool TCPSocket::accept(TCPSocket& clientSocket)
     socklen_t client_addr_len = sizeof(client_address);
 
     //Пытаемся принять входящее соединение
-    int clientSocketDescriptor = ::accept(clientSocket.m_socket, (struct sockaddr*)&client_address, &client_addr_len);
+    int clientSocketDescriptor = ::accept(m_socket, (struct sockaddr*)&client_address, &client_addr_len);
 
     //Если не удалось принять соединение
     if(clientSocketDescriptor == -1)
@@ -366,6 +366,7 @@ bool TCPSocket::accept(TCPSocket& clientSocket)
             //Сокет находится в неблокирующем режиме и операция отправки данных не может быть выполнена немедленно
 
             //Это не является ошибкой
+            return false;
         }
         else
         {
@@ -375,7 +376,7 @@ bool TCPSocket::accept(TCPSocket& clientSocket)
             setState(Error);
 
             //Записываем ошибку, произошедшую при отправке данных
-            setLastError("Не удалось принять соединение, ошибка №" + std::to_string(errno) + ", расшифровка: " + std::string(strerror(errno)));
+            setLastError("Не удалось принять соединение, ошибка № " + std::to_string(errno) + ", расшифровка: " + std::string(strerror(errno)));
         }
 
 
@@ -424,11 +425,15 @@ ssize_t TCPSocket::send(uint8_t* data, ssize_t size)
             {
                 //Произошла ошибка
                 setState(Error);
-                setLastError("Не удалось отправить данные, ошибка №" + std::to_string(errno) +
+                setLastError("Не удалось отправить данные, ошибка № " + std::to_string(errno) +
                             ", расшифровка: " + std::string(strerror(errno)));
 
                 return result;
             }
+        }
+        else if(result == 0)
+        {
+            return totalSent;
         }
         else
         {
@@ -443,6 +448,8 @@ ssize_t TCPSocket::send(uint8_t* data, ssize_t size)
 
     return totalSent;
 }
+
+#include <iostream>
 
 ssize_t TCPSocket::recv(uint8_t* data, ssize_t size)
 {
@@ -465,7 +472,7 @@ ssize_t TCPSocket::recv(uint8_t* data, ssize_t size)
             else
             {
                 //Произошла ошибка
-                setLastError("Не удалось принять данные, ошибка №" + std::to_string(errno) +
+                setLastError("Не удалось принять данные, ошибка № " + std::to_string(errno) +
                             ", расшифровка: " + std::string(strerror(errno)));
                 setState(Error);
 
@@ -475,6 +482,7 @@ ssize_t TCPSocket::recv(uint8_t* data, ssize_t size)
         else
         {
             totalReceived += result;
+            break;
         }
     }
 

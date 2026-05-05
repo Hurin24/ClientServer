@@ -29,7 +29,7 @@ int TCPServerApplication::execute()
 
     struct sockaddr_in sa_ipv4;
 
-    if(inet_pton(AF_INET, serverIp.c_str(), &sa_ipv4.sin_addr) == 1)
+    if(inet_pton(AF_INET, serverIp.c_str(), &sa_ipv4.sin_addr) != 1)
     {
         //Выводим ошибку, произошедшую при попытке инициализировать сокет
         std::cout << "Ошибка: введён не валидный IPv4 адрес" << std::endl;

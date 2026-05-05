@@ -19,6 +19,7 @@ public:
     TCPServerApplication& operator=(const TCPServerApplication&) = delete;
 
     int execute();
+
 protected:
     void addSession(std::unique_ptr<TCPServerSession> newServerSession);
     void removeSession(TCPServerSession* serverSession);

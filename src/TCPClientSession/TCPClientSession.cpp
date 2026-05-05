@@ -14,6 +14,8 @@ TCPClientSession::TCPClientSession()
 {
     //Запускаем рабочий цикл сессии в отдельном потоке
     m_sessionThread = std::thread(&TCPClientSession::sessionThread, this);
+
+    m_currentRequest.setState(TCPClientRequest::TCPClientRequestState::ResponseReceived);
 }
 
 TCPClientSession::~TCPClientSession()
@@ -135,7 +137,7 @@ bool TCPClientSession::connect(std::string serverIP, int serverPort)
     if(!result)
     {
         //Записываем ошибку, произошедшую при отправке данных
-        setLastError("Не удалось инициализировать сокет. Ошибка: " + m_socket.getLastError());
+        setLastError(m_socket.getLastError());
 
         //Устанавливаем состояние в Error
         setState(Error);
@@ -151,7 +153,7 @@ bool TCPClientSession::connect(std::string serverIP, int serverPort)
     if(!result)
     {
         //Записываем ошибку, произошедшую при подключении к серверу
-        setLastError("Не удалось подключиться к серверу. Ошибка: " + m_socket.getLastError());
+        setLastError(m_socket.getLastError());
 
         //Устанавливаем состояние в Error
         setState(Error);
@@ -375,7 +377,7 @@ bool TCPClientSession::receiveData(int socketDescriptor)
     if(bytesReceived == -1)
     {
         //Записываем ошибку, произошедшую при приеме данных
-        setLastError("Не удалось считать данные. Ошибка: " + m_socket.getLastError());
+        setLastError(m_socket.getLastError());
 
         //Устанавливаем состояние в Error
         setState(Error);
@@ -499,19 +501,9 @@ bool TCPClientSession::sendData(int socketDescriptor)
 
 bool TCPClientSession::checkAndUpdateCurrentRequest()
 {
-    std::lock_guard<std::mutex> lock(m_requestQueueMutex);
-
-    auto iterator = m_requestQueue.begin();
-
-    if(iterator == m_requestQueue.end())
-    {
-        return false;
-    }
-
     bool wasChanged = false;
 
-    //Исходя из текущего состояния, предпринимаем следующие действия
-    TCPClientRequest::TCPClientRequestState state = iterator->getState();
+    TCPClientRequest::TCPClientRequestState state = m_currentRequest.getState();
 
     switch(state)
     {
@@ -540,11 +532,24 @@ bool TCPClientSession::checkAndUpdateCurrentRequest()
         }
     }
 
+
     if(wasChanged)
     {
-        m_currentRequest = std::move(*iterator);
-        m_requestQueue.erase(iterator);
+        std::lock_guard<std::mutex> lock(m_requestQueueMutex);
+
+        auto iterator = m_requestQueue.begin();
+
+        if(iterator == m_requestQueue.end())
+        {
+            wasChanged = false;
+        }
+        else
+        {
+            m_currentRequest = std::move(*iterator);
+            m_requestQueue.erase(iterator);
+        }
     }
+
 
     return wasChanged;
 }

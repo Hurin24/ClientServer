@@ -138,17 +138,19 @@ bool TCPClientRequest::isTimeoutExpired() const
 
 std::vector<uint8_t> TCPClientRequest::serialize() const
 {
+    using namespace TCPClientServerProtocol;
+
     std::vector<uint8_t> result;
 
-    //Добавляем ID запроса
-    uint32_t requestIdNet = htonl(m_requestID);
-    const uint8_t* requestIdBytes = reinterpret_cast<const uint8_t*>(&requestIdNet);
-    result.insert(result.end(), requestIdBytes, requestIdBytes + sizeof(requestIdNet));
-
-    //Добавляем размер данных
-    uint32_t dataSizeNet = htonl(static_cast<uint32_t>(m_data.size()));
+    //Добавляем поле данных
+    ssize_t dataSizeNet = REQUEST_HEADER_SIZE + m_data.size();
     const uint8_t* dataSizeBytes = reinterpret_cast<const uint8_t*>(&dataSizeNet);
     result.insert(result.end(), dataSizeBytes, dataSizeBytes + sizeof(dataSizeNet));
+
+    //Добавляем ID запроса
+    size_t requestIdNet = m_requestID;
+    const uint8_t* requestIdBytes = reinterpret_cast<const uint8_t*>(&requestIdNet);
+    result.insert(result.end(), requestIdBytes, requestIdBytes + sizeof(requestIdNet));
 
     //Добавляем данные
     if(!m_data.empty())
@@ -172,45 +174,23 @@ std::shared_ptr<TCPClientRequest> TCPClientRequest::deserialize(std::vector<uint
     //Кастуем начало данных к RequestHeader
     RequestHeader* header = reinterpret_cast<RequestHeader*>(data.data());
 
-    //Преобразуем из сетевого порядка байт в host порядок
-    uint64_t dataSize = be64toh(header->dataSize);
-    uint64_t id = be64toh(header->id);
-
-    //Вычисляем полный размер пакета
-    size_t totalSize = sizeof(RequestHeader) + dataSize;
-
     //Если данных для полного пакета недостаточно
-    if(data.size() < totalSize)
+    if(data.size() < header->dataSize)
     {
         return nullptr;
     }
 
     //Создаем объект запроса
     auto request = std::shared_ptr<TCPClientRequest>(new TCPClientRequest);
-    request->m_requestID = id;
+    request->m_requestID = header->id;
 
     //Копируем данные со смещением(без заголовка)
-    if(dataSize > 0)
+    if(header->dataSize > 0)
     {
-        request->m_data.resize(dataSize);
-        std::copy(data.begin() + sizeof(RequestHeader),
-                  data.begin() + totalSize,
-                  request->m_data.begin());
-    }
+        int tempSize = header->dataSize - sizeof(RequestHeader);
 
-    //Перераспределяем оставшиеся данные в начало вектора
-    size_t remainingSize = data.size() - totalSize;
-
-    if(remainingSize > 0)
-    {
-        std::copy(data.begin() + totalSize,
-                  data.end(),
-                  data.begin());
-        data.resize(remainingSize);
-    }
-    else
-    {
-        data.clear();
+        request->m_data.resize(tempSize);
+        std::copy(data.begin() + sizeof(RequestHeader), data.begin() + tempSize, request->m_data.begin());
     }
 
     return request;

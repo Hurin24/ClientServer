@@ -25,7 +25,7 @@ TCPServerSession::TCPServerSession(TCPServerApplication* tcpServerApplication, T
         m_clientPort = ntohs(clientAddr.sin_port);
     }
 
-    if(clientSocket.getState() != TCPSocket::Connected)
+    if(m_socket.getState() != TCPSocket::Connected)
     {
         //Устанавливаем состояние в Error
         setState(Error);
@@ -376,37 +376,38 @@ bool TCPServerSession::receiveData(int socketDescriptor)
         //Возвращаем false, так как произошла ошибка
         return false;
     }
-    else
+
+    //Увеличиваем офсет
+    m_offsetReceivedData += bytesReceived;
+
+    //Увеличиваем размер буфера исходя из количества принятых байт
+    m_receivedData.resize(m_receivedData.size() + bytesReceived);
+
+    //Если достаточно байт для формирования пакета
+    if(howMuchNeed(m_receivedData) == 0)
     {
-        //Увеличиваем офсет
-        m_offsetReceivedData += bytesReceived;
+        //Достаточно байт для формирования пакета
 
-        //Увеличиваем размер буфера исходя из количества принятых байт
-        m_receivedData.resize(m_receivedData.size() + bytesReceived);
+        //Пытаемся извлечь все возможные запросы из полученных данных
+        auto request = TCPClientRequest::deserialize(m_receivedData);
 
-        //Если достаточно байт для формирования пакета
-        if(howMuchNeed(m_receivedData) == 0)
+        //Если TCPClientRequest валиден
+        if(request)
         {
-            //Достаточно байт для формирования пакета
+            //Отправляем обратно
+            TCPServerResponse tcpServerResponse(std::move(*request));
+            sendResponse(std::move(tcpServerResponse));
 
-            //Пытаемся извлечь все возможные запросы из полученных данных
-            auto request = TCPClientRequest::deserialize(m_receivedData);
+            //Сбрасываем офсет
+            m_offsetReceivedData = 0;
 
-            //Если TCPClientRequest валиден
-            if(request)
-            {
-                //Отправляем обратно
-                TCPServerResponse tcpServerResponse(std::move(*request));
-                sendResponse(std::move(tcpServerResponse));
-
-                //Сбрасываем офсет
-                m_offsetReceivedData = 0;
-
-                //Сбрасываем размер буфера, так как все данные уже обработаны
-                m_receivedData.resize(0);
-            }
+            //Сбрасываем размер буфера, так как все данные уже обработаны
+            m_receivedData.resize(0);
         }
     }
+
+    //Возвращаем false, так как удалось считать данные
+    return true;
 }
 
 bool TCPServerSession::sendData(int socketDescriptor)
@@ -481,21 +482,12 @@ bool TCPServerSession::sendData(int socketDescriptor)
     return true;
 }
 
+
 bool TCPServerSession::checkAndUpdateCurrentResponse()
 {
-    std::lock_guard<std::mutex> lock(m_responseQueueMutex);
+    bool wasChanged = false;
 
-    auto iterator = m_responseQueue.begin();
-
-    if(iterator == m_responseQueue.end())
-    {
-        return false;
-    }
-
-     bool wasChanged = false;
-
-    //Исходя из текущего состояния, предпринимаем следующие действия
-    TCPServerResponse::TCPServerResponseState state = iterator->getState();
+    TCPServerResponse::TCPServerResponseState state = m_currentResponse.getState();
 
     switch(state)
     {
@@ -516,11 +508,24 @@ bool TCPServerSession::checkAndUpdateCurrentResponse()
         }
     }
 
+
     if(wasChanged)
     {
-        m_currentResponse = std::move(*iterator);
-        m_responseQueue.erase(iterator);
+        std::lock_guard<std::mutex> lock(m_responseQueueMutex);
+
+        auto iterator = m_responseQueue.begin();
+
+        if(iterator == m_responseQueue.end())
+        {
+            wasChanged = false;
+        }
+        else
+        {
+            m_currentResponse = std::move(*iterator);
+            m_responseQueue.erase(iterator);
+        }
     }
+
 
     return wasChanged;
 }
