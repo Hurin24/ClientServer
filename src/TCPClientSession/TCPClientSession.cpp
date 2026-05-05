@@ -12,10 +12,10 @@
 
 TCPClientSession::TCPClientSession()
 {
+    m_currentRequest.setState(TCPClientRequest::TCPClientRequestState::Failed);
+
     //Запускаем рабочий цикл сессии в отдельном потоке
     m_sessionThread = std::thread(&TCPClientSession::sessionThread, this);
-
-    m_currentRequest.setState(TCPClientRequest::TCPClientRequestState::ResponseReceived);
 }
 
 TCPClientSession::~TCPClientSession()
@@ -51,6 +51,8 @@ TCPClientSession::TCPClientSession(TCPClientSession&& other)
     m_receivedData = std::move(other.m_receivedData);
     m_offsetReceivedData = other.m_offsetReceivedData;
     m_lastError = std::move(other.m_lastError);
+
+    m_currentRequest.setState(TCPClientRequest::TCPClientRequestState::Failed);
 
     //Запускаем рабочий цикл сессии в отдельном потоке
     m_sessionThread = std::thread(&TCPClientSession::sessionThread, this);
@@ -409,6 +411,9 @@ bool TCPClientSession::receiveData(int socketDescriptor)
                 {
                     //Изменяем статус текущего запроса
                     m_currentRequest.setState(TCPClientRequest::ResponseReceived);
+
+                    std::vector<uint8_t> refData = response->getData();
+                    std::cout << std::string(refData.begin(), refData.end());
                 }
 
                 //Сбрасываем офсет

@@ -25,6 +25,8 @@ TCPServerSession::TCPServerSession(TCPServerApplication* tcpServerApplication, T
         m_clientPort = ntohs(clientAddr.sin_port);
     }
 
+    m_currentResponse.setState(TCPServerResponse::Failed);
+
     if(m_socket.getState() != TCPSocket::Connected)
     {
         //Устанавливаем состояние в Error
@@ -39,10 +41,11 @@ TCPServerSession::TCPServerSession(TCPServerApplication* tcpServerApplication, T
     //Устанавливаем состояние в Connected
     setState(Connected);
 
+    //Устанавливаем состояние в Failed
+    m_currentResponse.setState(TCPServerResponse::Failed);
+
     //Запускаем рабочий цикл сессии в отдельном потоке
     m_sessionThread = std::thread(&TCPServerSession::sessionThread, this);
-
-    m_currentResponse.setState(TCPServerResponse::WasSended);
 }
 
 TCPServerSession::~TCPServerSession()
@@ -80,7 +83,7 @@ TCPServerSession::TCPServerSession(TCPServerSession&& other)
     m_offsetReceivedData = other.m_offsetReceivedData;
     m_lastError = std::move(other.m_lastError);
 
-    m_currentResponse.setState(TCPServerResponse::WasSended);
+    m_currentResponse.setState(TCPServerResponse::Failed);
 
     //Запускаем рабочий цикл сессии в отдельном потоке
     m_sessionThread = std::thread(&TCPServerSession::sessionThread, this);
@@ -121,8 +124,6 @@ TCPServerSession& TCPServerSession::operator=(TCPServerSession&& other)
     m_receivedData = std::move(other.m_receivedData);
     m_offsetReceivedData = other.m_offsetReceivedData;
     m_lastError = std::move(other.m_lastError);
-
-    m_currentResponse.setState(TCPServerResponse::WasSended);
 
     //Запускаем рабочий цикл сессии в отдельном потоке
     m_sessionThread = std::thread(&TCPServerSession::sessionThread, this);
@@ -355,10 +356,10 @@ bool TCPServerSession::receiveData(int socketDescriptor)
     ssize_t bytesAvailable = howMuchNeed(m_receivedData);
 
     //Если достигли конца буфера
-    if(m_receivedData.capacity() < m_receivedData.size() + bytesAvailable)
+    if(m_receivedData.size() - m_offsetReceivedData < bytesAvailable)
     {
         //Увеличиваем размер буфера для приема данных
-        m_receivedData.reserve(m_receivedData.size() + bytesAvailable);
+        m_receivedData.resize(m_receivedData.size() + bytesAvailable);
     }
 
     //Считываем данные с учетом офсета
@@ -380,8 +381,31 @@ bool TCPServerSession::receiveData(int socketDescriptor)
     //Увеличиваем офсет
     m_offsetReceivedData += bytesReceived;
 
+    std::cout << "before: ";
+
+    for(int i = 0; i < m_receivedData.size(); i++)
+    {
+        uint8_t newUint8_t = *(reinterpret_cast<uint8_t*>(m_receivedData.data() + i));
+        int newInt = newUint8_t;
+        std::cout << newInt;
+    }
+
+    std::cout << std::endl;
+
     //Увеличиваем размер буфера исходя из количества принятых байт
     m_receivedData.resize(m_receivedData.size() + bytesReceived);
+
+    std::cout << "after: ";
+
+    for(int i = 0; i < m_receivedData.size(); i++)
+    {
+        uint8_t newUint8_t = *(reinterpret_cast<uint8_t*>(m_receivedData.data() + i));
+        int newInt = newUint8_t;
+        std::cout << newInt;
+    }
+
+    std::cout << std::endl;
+
 
     //Если достаточно байт для формирования пакета
     if(howMuchNeed(m_receivedData) == 0)
