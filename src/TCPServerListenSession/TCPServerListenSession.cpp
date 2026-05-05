@@ -302,4 +302,3 @@ void TCPServerListenSession::setLastError(const std::string& errorMessage)
 {
     m_lastError = errorMessage;
 }
-

@@ -9,11 +9,11 @@
 namespace TCPClientServerProtocol
 {
     //Константы протокола
-    constexpr size_t DATA_SIZE = sizeof(size_t);                                //Размер данных(size_t)
-    constexpr size_t ID_SIZE = sizeof(size_t);                                  //ID(size_t)
-    constexpr size_t STATUS_SIZE = sizeof(uint8_t);                             //1 байт на статус
-    constexpr size_t REQUEST_HEADER_SIZE = DATA_SIZE + ID_SIZE;                 //sizeof(size_t) + sizeof(size_t) на заголовок запроса
-    constexpr size_t RESPONSE_HEADER_SIZE = DATA_SIZE + ID_SIZE + STATUS_SIZE;  //sizeof(size_t) + sizeof(size_t) + sizeof(uint8_t) на заголовок ответа
+    constexpr ssize_t DATA_SIZE = sizeof(ssize_t);                              //Размер данных(ssize_t)
+    constexpr ssize_t ID_SIZE = sizeof(ssize_t);                                //ID(ssize_t)
+    constexpr ssize_t STATUS_SIZE = sizeof(uint8_t);                            //1 байт на статус
+    constexpr ssize_t REQUEST_HEADER_SIZE = DATA_SIZE + ID_SIZE;                //sizeof(ssize_t) + sizeof(ssize_t) на заголовок запроса
+    constexpr ssize_t RESPONSE_HEADER_SIZE = DATA_SIZE + ID_SIZE + STATUS_SIZE; //sizeof(ssize_t) + sizeof(ssize_t) + sizeof(uint8_t) на заголовок ответа
 
 
     //Статусы ответа
@@ -27,8 +27,8 @@ namespace TCPClientServerProtocol
     #pragma pack(push, 1)
     struct RequestHeader
     {
-        size_t dataSize;        //Размер данных
-        size_t id;              //Уникальный идентификатор запроса
+        ssize_t dataSize;        //Размер данных
+        ssize_t id;              //Уникальный идентификатор запроса
     };
     #pragma pack(pop)
 
@@ -36,15 +36,15 @@ namespace TCPClientServerProtocol
     #pragma pack(push, 1)
     struct ResponseHeader
     {
-        size_t dataSize;        //Размер данных
-        size_t id;              //Уникальный идентификатор ответа, совпадает с ID запроса
+        ssize_t dataSize;        //Размер данных
+        ssize_t id;              //Уникальный идентификатор ответа, совпадает с ID запроса
         ResponseStatus status;  //Статус
     };
     #pragma pack(pop)
 
 
     //Функция для определения, сколько байт нужно дочитать
-    size_t howMuchNeed(const std::vector<uint8_t>& data)
+    ssize_t howMuchNeed(const std::vector<uint8_t>& data)
     {
         //Если данных меньше DATA_SIZE
         if(data.size() < DATA_SIZE)
@@ -60,7 +60,7 @@ namespace TCPClientServerProtocol
 
 
         //Читаем размер данных
-        size_t dataSize;
+        ssize_t dataSize;
         std::memcpy(&dataSize, data.data(), DATA_SIZE);
         dataSize = be64toh(dataSize);
 

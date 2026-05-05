@@ -62,6 +62,7 @@ bool TCPClientSession::connect(std::string serverIP, int serverPort)
     if(!result)
     {
         //Не удалось инициализировать сокет
+
         //Записываем ошибку, произошедшую при отправке данных
         setLastError("Не удалось инициализировать сокет. Ошибка: " + m_socket.getLastError());
 
@@ -452,4 +453,3 @@ void TCPClientSession::setLastError(const std::string& errorMessage)
 {
     m_lastError = errorMessage;
 }
-
