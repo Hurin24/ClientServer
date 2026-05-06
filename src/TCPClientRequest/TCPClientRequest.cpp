@@ -9,11 +9,11 @@
 std::atomic<uint64_t> TCPClientRequest::m_nextRequestID {1};  // Начинаем с 1
 
 TCPClientRequest::TCPClientRequest() :
-                  m_state(Pending),
                   m_requestID(0),
+                  m_state(Pending),
                   m_timeoutMs(5000)
 {
-
+    m_nextRequestID = generateNewRequestID();
 }
 
 TCPClientRequest::~TCPClientRequest()
@@ -22,33 +22,39 @@ TCPClientRequest::~TCPClientRequest()
 }
 
 TCPClientRequest::TCPClientRequest(TCPClientRequest&& other) :
+                  m_requestID(other.m_requestID),
                   m_data(std::move(other.m_data)),
                   m_state(other.m_state),
-                  m_requestID(other.m_requestID),
                   m_sendTime(other.m_sendTime),
                   m_timeoutMs(other.m_timeoutMs)
 {
     //Обнуляем исходный объект
-    other.m_state = Pending;
     other.m_requestID = 0;
-    other.m_timeoutMs = 5000;
+    other.m_state = Failed;
+    other.m_timeoutMs = 0;
 }
 
 TCPClientRequest& TCPClientRequest::operator=(TCPClientRequest&& other)
 {
-    if(this != &other)
+    //Проверяем самоприсваивание
+    if(this == &other)
     {
-        m_data = std::move(other.m_data);
-        m_state = other.m_state;
-        m_requestID = other.m_requestID;
-        m_sendTime = other.m_sendTime;
-        m_timeoutMs = other.m_timeoutMs;
-
-        //Обнуляем исходный объект
-        other.m_state = Pending;
-        other.m_requestID = 0;
-        other.m_timeoutMs = 5000;
+        return *this;
     }
+
+
+    //Перемещаем данные из other в текущий объект
+    m_requestID = other.m_requestID;
+    m_data = std::move(other.m_data);
+    m_state = other.m_state;
+    m_sendTime = other.m_sendTime;
+    m_timeoutMs = other.m_timeoutMs;
+
+
+    //Обнуляем исходный объект
+    other.m_requestID = 0;
+    other.m_state = Failed;
+    other.m_timeoutMs = 0;
 
     return *this;
 }

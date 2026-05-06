@@ -6,7 +6,8 @@
 
 TCPServerResponse::TCPServerResponse() :
                    m_responseID(0),
-                   m_responseStatus(TCPClientServerProtocol::ResponseStatus::Success)
+                   m_responseStatus(TCPClientServerProtocol::ResponseStatus::Success),
+                   m_state(Pending)
 {
 
 }
@@ -19,7 +20,8 @@ TCPServerResponse::~TCPServerResponse()
 TCPServerResponse::TCPServerResponse(TCPClientRequest&& other) :
                    m_responseID(other.getRequestID()),
                    m_responseStatus(TCPClientServerProtocol::ResponseStatus::Success),
-                   m_data(std::move(other.getData()))
+                   m_data(std::move(other.getData())),
+                   m_state(Pending)
 
 {
 
@@ -27,22 +29,32 @@ TCPServerResponse::TCPServerResponse(TCPClientRequest&& other) :
 
 TCPServerResponse::TCPServerResponse(TCPServerResponse&& other) :
                    m_responseID(other.m_responseID),
-                   m_responseStatus(TCPClientServerProtocol::ResponseStatus::Success),
-                   m_data(std::move(other.m_data))
+                   m_responseStatus(other.m_responseStatus),
+                   m_data(std::move(other.m_data)),
+                   m_state(other.m_state)
 {
+    //Обнуляем исходный объект
     other.m_responseID = 0;
+    other.m_state = TCPServerResponse::Failed;
 }
 
 TCPServerResponse& TCPServerResponse::operator=(TCPServerResponse&& other)
 {
-    if(this != &other)
+    //Проверяем на самоприсваивание
+    if(this == &other)
     {
-        m_responseID = other.m_responseID;
-        m_responseStatus = TCPClientServerProtocol::ResponseStatus::Success;
-        m_data = std::move(other.m_data);
-
-        other.m_responseID = 0;
+        return *this;
     }
+
+    //Перемещаем данные из other в текущий объект
+    m_responseID = other.m_responseID;
+    m_responseStatus = other.m_responseStatus;
+    m_data = std::move(other.m_data);
+    m_state = other.m_state;
+
+    //Обнуляем исходный объект
+    other.m_responseID = 0;
+    other.m_state = TCPServerResponse::Failed;
 
     return *this;
 }
@@ -88,21 +100,18 @@ std::vector<uint8_t> TCPServerResponse::serialize() const
 
     std::vector<uint8_t> result;
 
-    //Создаем заголовок ответа
-    ResponseHeader header;
-    header.dataSize = m_data.size() + sizeof(ResponseHeader);
-    header.id = m_responseID;
-    header.status = m_responseStatus;
+    //Добавляем поле данных
+    ssize_t dataSizeNet = RESPONSE_HEADER_SIZE + m_data.size();
+    const uint8_t* dataSizeBytes = reinterpret_cast<const uint8_t*>(&dataSizeNet);
+    result.insert(result.end(), dataSizeBytes, dataSizeBytes + sizeof(dataSizeNet));
 
+    //Добавляем ID ответа
+    const uint8_t* responseIdBytes = reinterpret_cast<const uint8_t*>(&m_responseID);
+    result.insert(result.end(), responseIdBytes, responseIdBytes + sizeof(m_responseID));
 
-    //Сериализуем заголовок в сетевой порядок байт
-    ResponseHeader headerNet;
-    headerNet.id = htobe64(header.id);
-    headerNet.status = header.status;
-    headerNet.dataSize = htobe64(header.dataSize);
-
-    const uint8_t* headerBytes = reinterpret_cast<const uint8_t*>(&headerNet);
-    result.insert(result.end(), headerBytes, headerBytes + sizeof(ResponseHeader));
+    //Добавляем результат ответа сервера
+    const uint8_t* responseStatusBytes = reinterpret_cast<const uint8_t*>(&m_responseStatus);
+    result.insert(result.end(), responseStatusBytes, responseStatusBytes + sizeof(m_responseStatus));
 
     //Добавляем данные
     if(!m_data.empty())
@@ -126,32 +135,25 @@ std::shared_ptr<TCPServerResponse> TCPServerResponse::deserialize(std::vector<ui
     //Кастуем начало данных к ResponseHeader
     ResponseHeader* header = reinterpret_cast<ResponseHeader*>(data.data());
 
-    //Преобразуем из сетевого порядка байт в host порядок
-    uint64_t id = be64toh(header->id);
-    uint64_t dataSize = be64toh(header->dataSize);
-
-    //Вычисляем полный размер пакета
-    size_t totalSize = sizeof(ResponseHeader) + dataSize;
-
     //Если данных для полного пакета недостаточно
-    if(data.size() < totalSize)
+    if(data.size() < header->dataSize)
     {
         return nullptr;
     }
 
     //Создаем объект ответа
     auto response = std::shared_ptr<TCPServerResponse>(new TCPServerResponse);
-    response->m_responseID = id;
+    response->m_responseID = header->id;
+    response->m_responseStatus = header->status;
 
     //Копируем данные со смещением(без заголовка)
-    if(dataSize > 0)
+    if(header->dataSize > 0)
     {
-        response->m_data.resize(dataSize);
-        std::copy(data.begin() + sizeof(ResponseHeader),
-                  data.begin() + totalSize,
-                  response->m_data.begin());
-    }
+        int tempSize = header->dataSize - sizeof(ResponseHeader);
 
+        response->m_data.resize(tempSize);
+        std::copy(data.begin() + sizeof(ResponseHeader), data.begin() + tempSize, response->m_data.begin());
+    }
 
     return response;
 }

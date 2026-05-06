@@ -20,35 +20,36 @@ TCPServerApplication::~TCPServerApplication()
 
 int TCPServerApplication::execute()
 {
-    std::string serverIp;
-    int serverPort;
+    // std::string serverIp;
+    // int serverPort;
 
-    std::cout << "Введите IPv4 адрес на котором вы хотите запустить сервер: ";
-    std::cin >> serverIp;
-    std::cout << std::endl;
+    // std::cout << "Введите IPv4 адрес на котором вы хотите запустить сервер: ";
+    // std::cin >> serverIp;
+    // std::cout << std::endl;
 
-    struct sockaddr_in sa_ipv4;
+    // struct sockaddr_in sa_ipv4;
 
-    if(inet_pton(AF_INET, serverIp.c_str(), &sa_ipv4.sin_addr) != 1)
-    {
-        //Выводим ошибку, произошедшую при попытке инициализировать сокет
-        std::cout << "Ошибка: введён не валидный IPv4 адрес" << std::endl;
+    // if(inet_pton(AF_INET, serverIp.c_str(), &sa_ipv4.sin_addr) != 1)
+    // {
+    //     //Выводим ошибку, произошедшую при попытке инициализировать сокет
+    //     std::cout << "Ошибка: введён не валидный IPv4 адрес" << std::endl;
 
-        //Завершаем выполнение функции, так как был введён не валидный IPv4 адрес
-        return 1;
-    }
+    //     //Завершаем выполнение функции, так как был введён не валидный IPv4 адрес
+    //     return 1;
+    // }
 
 
-    std::cout << "Введите порт на котором хотите запустить сервер: ";
-    std::cin >> serverPort;
-    std::cout << std::endl;
+    // std::cout << "Введите порт на котором хотите запустить сервер: ";
+    // std::cin >> serverPort;
+    // std::cout << std::endl;
 
 
     //Создаём сессию
     TCPServerListenSession tcpServerListenSession(this);
 
     //Производим попытку начать слушать сокет
-    bool result = tcpServerListenSession.startListen(serverIp,  serverPort);
+    // bool result = tcpServerListenSession.startListen(serverIp,  serverPort);
+    bool result = tcpServerListenSession.startListen("127.0.0.1", 49999);
 
     //Если не удалось начать слушать сокет
     if(!result)

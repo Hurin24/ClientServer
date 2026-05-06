@@ -44,38 +44,25 @@ namespace TCPClientServerProtocol
 
 
     //Функция для определения, сколько байт нужно дочитать
-    inline ssize_t howMuchNeed(const std::vector<uint8_t>& data)
+    inline ssize_t howMuchNeed(const uint8_t* const ptrData, ssize_t dataSize)
     {
         //Если данных меньше DATA_SIZE
-        if(data.size() < DATA_SIZE)
+        if(dataSize < DATA_SIZE)
         {
             //Данных меньше чем DATA_SIZE
 
             //Возвращаем, сколько байт нужно дочитать для получения полного запроса
-            return DATA_SIZE - data.size();
+            return DATA_SIZE - dataSize;
         }
-
 
         //Данных больше или равно DATA_SIZE
 
-
         //Читаем размер данных
-        ssize_t dataSize;
-        std::memcpy(&dataSize, data.data(), DATA_SIZE);
-
-        //Если данных достаточно
-        if(data.size() >= dataSize)
-        {
-            //Данных достаточно
-
-            //Возвращаем 0, так как данных достаточно для получения полного запроса
-            return 0;
-        }
-
-        //Данных не достаточно
+        ssize_t tempDataSize;
+        std::memcpy(&tempDataSize, ptrData, DATA_SIZE);
 
         //Возвращаем, сколько байт нужно дочитать для получения полного запроса
-        return dataSize - data.size();
+        return tempDataSize - dataSize ;
     }
 }
 

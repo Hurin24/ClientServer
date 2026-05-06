@@ -71,10 +71,11 @@ TCPServerSession::TCPServerSession(TCPServerSession&& other)
         other.m_sessionThread.join();
     }
 
+    //Перемещаем данные из other в текущий объект
     m_tcpServerApplication = other.m_tcpServerApplication;
     m_isWorking = tempValue;
     m_state = other.m_state;
-    m_clientIP = other.m_clientIP;
+    m_clientIP = std::move(other.m_clientIP);
     m_clientPort = other.m_clientPort;
     m_socket = std::move(other.m_socket);
     m_sendingData = std::move(other.m_sendingData);
@@ -82,8 +83,7 @@ TCPServerSession::TCPServerSession(TCPServerSession&& other)
     m_receivedData = std::move(other.m_receivedData);
     m_offsetReceivedData = other.m_offsetReceivedData;
     m_lastError = std::move(other.m_lastError);
-
-    m_currentResponse.setState(TCPServerResponse::Failed);
+    m_currentResponse = std::move(other.m_currentResponse);
 
     //Запускаем рабочий цикл сессии в отдельном потоке
     m_sessionThread = std::thread(&TCPServerSession::sessionThread, this);
@@ -92,6 +92,7 @@ TCPServerSession::TCPServerSession(TCPServerSession&& other)
     other.m_tcpServerApplication = nullptr;
     other.m_state = Error;
     other.m_clientPort = -1;
+    other.m_offsetSendingData = 0;
 }
 
 TCPServerSession& TCPServerSession::operator=(TCPServerSession&& other)
@@ -107,16 +108,25 @@ TCPServerSession& TCPServerSession::operator=(TCPServerSession&& other)
 
     //Останавливаем поток у other
     other.setIsWorking(false);
-
     if(other.m_sessionThread.joinable())
     {
         other.m_sessionThread.join();
     }
 
+
+    //Останавливаем поток у this
+    setIsWorking(false);
+    if(m_sessionThread.joinable())
+    {
+        m_sessionThread.join();
+    }
+
+
+    //Перемещаем данные из other в текущий объект
     m_tcpServerApplication = other.m_tcpServerApplication;
     m_isWorking = tempValue;
     m_state = other.m_state;
-    m_clientIP = other.m_clientIP;
+    m_clientIP = std::move(other.m_clientIP);
     m_clientPort = other.m_clientPort;
     m_socket = std::move(other.m_socket);
     m_sendingData = std::move(other.m_sendingData);
@@ -124,6 +134,7 @@ TCPServerSession& TCPServerSession::operator=(TCPServerSession&& other)
     m_receivedData = std::move(other.m_receivedData);
     m_offsetReceivedData = other.m_offsetReceivedData;
     m_lastError = std::move(other.m_lastError);
+    m_currentResponse = std::move(other.m_currentResponse);
 
     //Запускаем рабочий цикл сессии в отдельном потоке
     m_sessionThread = std::thread(&TCPServerSession::sessionThread, this);
@@ -132,6 +143,7 @@ TCPServerSession& TCPServerSession::operator=(TCPServerSession&& other)
     other.m_tcpServerApplication = nullptr;
     other.m_state = Error;
     other.m_clientPort = -1;
+    other.m_offsetSendingData = 0;
 
     return *this;
 }
@@ -353,17 +365,17 @@ bool TCPServerSession::receiveData(int socketDescriptor)
     using namespace TCPClientServerProtocol;
 
     //Узнаём сколько байт ещё требуется считать
-    ssize_t bytesAvailable = howMuchNeed(m_receivedData);
+    ssize_t bytesAvailable = howMuchNeed(m_receivedData.data(), m_offsetReceivedData);
 
-    //Если достигли конца буфера
-    if(m_receivedData.size() - m_offsetReceivedData < bytesAvailable)
+    //Если размера буфера не хватает для приема данных
+    if(m_receivedData.size() < m_offsetReceivedData + bytesAvailable)
     {
-        //Увеличиваем размер буфера для приема данных
-        m_receivedData.resize(m_receivedData.size() + bytesAvailable);
+        //Если размера буфера не хватает для приема данных
+        m_receivedData.resize(m_offsetReceivedData + bytesAvailable);
     }
 
     //Считываем данные с учетом офсета
-    int bytesReceived = m_socket.recv(m_receivedData.data() + m_offsetReceivedData, bytesAvailable);
+    int bytesReceived = m_socket.recv(m_receivedData.data() + m_offsetReceivedData, m_receivedData.size() - m_offsetReceivedData);
 
     //Если произошла ошибка
     if(bytesReceived == -1)
@@ -381,34 +393,10 @@ bool TCPServerSession::receiveData(int socketDescriptor)
     //Увеличиваем офсет
     m_offsetReceivedData += bytesReceived;
 
-    std::cout << "before: ";
-
-    for(int i = 0; i < m_receivedData.size(); i++)
-    {
-        uint8_t newUint8_t = *(reinterpret_cast<uint8_t*>(m_receivedData.data() + i));
-        int newInt = newUint8_t;
-        std::cout << newInt;
-    }
-
-    std::cout << std::endl;
-
-    //Увеличиваем размер буфера исходя из количества принятых байт
-    m_receivedData.resize(m_receivedData.size() + bytesReceived);
-
-    std::cout << "after: ";
-
-    for(int i = 0; i < m_receivedData.size(); i++)
-    {
-        uint8_t newUint8_t = *(reinterpret_cast<uint8_t*>(m_receivedData.data() + i));
-        int newInt = newUint8_t;
-        std::cout << newInt;
-    }
-
-    std::cout << std::endl;
-
+    bytesAvailable = howMuchNeed(m_receivedData.data(), m_offsetReceivedData);
 
     //Если достаточно байт для формирования пакета
-    if(howMuchNeed(m_receivedData) == 0)
+    if(bytesAvailable <= 0)
     {
         //Достаточно байт для формирования пакета
 
@@ -419,14 +407,26 @@ bool TCPServerSession::receiveData(int socketDescriptor)
         if(request)
         {
             //Отправляем обратно
-            TCPServerResponse tcpServerResponse(std::move(*request));
+            TCPServerResponse tcpServerResponse(std::move((*request.get())));
             sendResponse(std::move(tcpServerResponse));
+        }
 
+        //Если офсет меньше 0
+        if(bytesAvailable < 0)
+        {
+            //Офсет меньше 0
+            //Это означает, что в данных уже есть полный пакет и возможно начало следующего пакета
+
+            //Копируем их в начало буфера
+            memcpy(m_receivedData.data(), m_receivedData.data() + m_offsetReceivedData, -bytesAvailable);
+
+            //Устанавливаем новый офсет, который будет указывать на конец данных, которые уже есть в буфере
+            m_offsetReceivedData = -bytesAvailable;
+        }
+        else
+        {
             //Сбрасываем офсет
             m_offsetReceivedData = 0;
-
-            //Сбрасываем размер буфера, так как все данные уже обработаны
-            m_receivedData.resize(0);
         }
     }
 

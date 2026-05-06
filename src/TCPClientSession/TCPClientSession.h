@@ -78,10 +78,10 @@ private:
 
     TCPClientRequest m_currentRequest;                          //Текущий запрос, который отправляется серверу
 
-    std::vector<uint8_t> m_sendingData;                         //Буфер для отправляемых данных
+    std::vector<uint8_t> m_sendingData = { 0 };                 //Буфер для отправляемых данных
     ssize_t m_offsetSendingData = 0;                            //Офсет для отправляемых данных
 
-    std::vector<uint8_t> m_receivedData;                        //Буфер для принимаемых данных
+    std::vector<uint8_t> m_receivedData = { 0 };                //Буфер для принимаемых данных
     ssize_t m_offsetReceivedData = 0;                           //Офсет для принимаемых данных
 
     std::string m_lastError = "Нет ошибок";                     //Последняя ошибка, произошедшая при работе сессии

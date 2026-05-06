@@ -35,15 +35,15 @@ TCPClientSession::TCPClientSession(TCPClientSession&& other)
 
     //Останавливаем поток у other
     other.setIsWorking(false);
-
     if(other.m_sessionThread.joinable())
     {
         other.m_sessionThread.join();
     }
 
+
     m_isWorking = tempValue;
     m_state = other.m_state;
-    m_serverIP = other.m_serverIP;
+    m_serverIP = std::move(other.m_serverIP);
     m_serverPort = other.m_serverPort;
     m_socket = std::move(other.m_socket);
     m_sendingData = std::move(other.m_sendingData);
@@ -51,15 +51,18 @@ TCPClientSession::TCPClientSession(TCPClientSession&& other)
     m_receivedData = std::move(other.m_receivedData);
     m_offsetReceivedData = other.m_offsetReceivedData;
     m_lastError = std::move(other.m_lastError);
+    m_currentRequest = std::move(other.m_currentRequest);
 
-    m_currentRequest.setState(TCPClientRequest::TCPClientRequestState::Failed);
 
     //Запускаем рабочий цикл сессии в отдельном потоке
     m_sessionThread = std::thread(&TCPClientSession::sessionThread, this);
 
+
     //Обнуляем исходный объект
     other.m_state = Error;
     other.m_serverPort = 0;
+    other.m_offsetSendingData = 0;
+    other.m_offsetReceivedData = 0;
 }
 
 TCPClientSession& TCPClientSession::operator=(TCPClientSession&& other)
@@ -70,20 +73,29 @@ TCPClientSession& TCPClientSession::operator=(TCPClientSession&& other)
         return *this;
     }
 
+
     //Запоминаем значение isWorking у other
     bool tempValue = other.getIsWorking();
 
     //Останавливаем поток у other
     other.setIsWorking(false);
-
     if(other.m_sessionThread.joinable())
     {
         other.m_sessionThread.join();
     }
 
+
+    //Останавливаем поток у this
+    setIsWorking(false);
+    if(m_sessionThread.joinable())
+    {
+        m_sessionThread.join();
+    }
+
+
     m_isWorking = tempValue;
     m_state = other.m_state;
-    m_serverIP = other.m_serverIP;
+    m_serverIP = std::move(other.m_serverIP);
     m_serverPort = other.m_serverPort;
     m_socket = std::move(other.m_socket);
     m_sendingData = std::move(other.m_sendingData);
@@ -91,13 +103,18 @@ TCPClientSession& TCPClientSession::operator=(TCPClientSession&& other)
     m_receivedData = std::move(other.m_receivedData);
     m_offsetReceivedData = other.m_offsetReceivedData;
     m_lastError = std::move(other.m_lastError);
+    m_currentRequest = std::move(other.m_currentRequest);
+
 
     //Запускаем рабочий цикл сессии в отдельном потоке
     m_sessionThread = std::thread(&TCPClientSession::sessionThread, this);
 
-    //Обнуляем исходный объект
+
+     //Обнуляем исходный объект
     other.m_state = Error;
     other.m_serverPort = 0;
+    other.m_offsetSendingData = 0;
+    other.m_offsetReceivedData = 0;
 
     return *this;
 }
@@ -363,17 +380,17 @@ bool TCPClientSession::receiveData(int socketDescriptor)
     using namespace TCPClientServerProtocol;
 
     //Узнаём сколько байт ещё требуется считать
-    ssize_t bytesAvailable = howMuchNeed(m_receivedData);
+    ssize_t bytesAvailable = howMuchNeed(m_receivedData.data(), m_offsetReceivedData);
 
-    //Если достигли конца буфера
-    if(m_receivedData.capacity() < m_receivedData.size() + bytesAvailable)
+    //Если размера буфера не хватает для приема данных
+    if(m_receivedData.size() < m_offsetReceivedData + bytesAvailable)
     {
-        //Увеличиваем размер буфера для приема данных
-        m_receivedData.reserve(m_receivedData.size() + bytesAvailable);
+        //Если размера буфера не хватает для приема данных
+        m_receivedData.resize(m_offsetReceivedData + bytesAvailable);
     }
 
     //Считываем данные с учетом офсета
-    int bytesReceived = m_socket.recv(m_receivedData.data() + m_offsetReceivedData, bytesAvailable);
+    int bytesReceived = m_socket.recv(m_receivedData.data() + m_offsetReceivedData, m_receivedData.size() - m_offsetReceivedData);
 
     //Если произошла ошибка
     if(bytesReceived == -1)
@@ -387,44 +404,63 @@ bool TCPClientSession::receiveData(int socketDescriptor)
         //Возвращаем false, так как произошла ошибка
         return false;
     }
-    else
+
+    //Увеличиваем офсет
+    m_offsetReceivedData += bytesReceived;
+
+    bytesAvailable = howMuchNeed(m_receivedData.data(), m_offsetReceivedData);
+
+    //Если достаточно байт для формирования пакета
+    if(bytesAvailable <= 0)
     {
-        //Увеличиваем офсет
-        m_offsetReceivedData += bytesReceived;
+        //Достаточно байт для формирования пакета
 
-        //Увеличиваем размер буфера исходя из количества принятых байт
-        m_receivedData.resize(m_receivedData.size() + bytesReceived);
+        //Пытаемся извлечь все возможные ответы из полученных данных
+        auto response = TCPServerResponse::deserialize(m_receivedData);
 
-        //Если достаточно байт для формирования пакета
-        if(howMuchNeed(m_receivedData) == 0)
+        //Если TCPServerResponse валиден
+        if(response)
         {
-            //Достаточно байт для формирования пакета
-
-            //Пытаемся извлечь все возможные ответы из полученных данных
-            auto response = TCPServerResponse::deserialize(m_receivedData);
-
-            //Если TCPServerResponse валиден
-            if(response)
+            //Если ID полученного ответа от сервера равно ID текущего запроса
+            if(m_currentRequest.getRequestID() == response->getResponseID())
             {
-                //Если ID полученного ответа от сервера равно ID текущего запроса
-                if(m_currentRequest.getRequestID() == response->getResponseID())
-                {
-                    //Изменяем статус текущего запроса
-                    m_currentRequest.setState(TCPClientRequest::ResponseReceived);
+                //Изменяем статус текущего запроса
+                m_currentRequest.setState(TCPClientRequest::ResponseReceived);
 
-                    std::vector<uint8_t> refData = response->getData();
-                    std::cout << std::string(refData.begin(), refData.end());
+                const std::vector<uint8_t>& refData = response->getData();
+
+                std::string tempString((const char*)refData.data(), refData.size());
+                std::cout << tempString << std::endl;
+
+                // Побайтовый вывод в десятичном формате
+                std::cout << "Побайтовый вывод (dec): ";
+                for(size_t i = 0; i < refData.size(); ++i) {
+                    std::cout << (uint8_t)refData[i] << " ";
                 }
-
-                //Сбрасываем офсет
-                m_offsetReceivedData = 0;
-
-                //Сбрасываем размер буфера, так как все данные уже обработаны
-                m_receivedData.resize(0);
+                std::cout << std::endl;
             }
+        }
+
+        //Если офсет меньше 0
+        if(bytesAvailable < 0)
+        {
+            //Офсет меньше 0
+            //Это означает, что в данных уже есть полный пакет и возможно начало следующего пакета
+
+            //Копируем их в начало буфера
+            memcpy(m_receivedData.data(), m_receivedData.data() + m_offsetReceivedData, -bytesAvailable);
+
+            //Устанавливаем новый офсет, который будет указывать на конец данных, которые уже есть в буфере
+            m_offsetReceivedData = -bytesAvailable;
+        }
+        else
+        {
+            //Сбрасываем офсет
+            m_offsetReceivedData = 0;
         }
     }
 
+    //Возвращаем true, так как удалось считать данные
     return true;
 }
 
