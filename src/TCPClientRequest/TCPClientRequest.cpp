@@ -196,7 +196,9 @@ std::shared_ptr<TCPClientRequest> TCPClientRequest::deserialize(std::vector<uint
         int tempSize = header->dataSize - sizeof(RequestHeader);
 
         request->m_data.resize(tempSize);
-        std::copy(data.begin() + sizeof(RequestHeader), data.begin() + tempSize, request->m_data.begin());
+
+        //Копируем всё после RequestHeader размером с dataSize - sizeof(RequestHeader)
+        std::copy(data.begin() + sizeof(RequestHeader), data.begin() + sizeof(RequestHeader) + tempSize, request->m_data.begin());
     }
 
     return request;

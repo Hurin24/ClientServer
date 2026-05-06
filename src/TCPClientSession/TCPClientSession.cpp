@@ -430,14 +430,7 @@ bool TCPClientSession::receiveData(int socketDescriptor)
                 const std::vector<uint8_t>& refData = response->getData();
 
                 std::string tempString((const char*)refData.data(), refData.size());
-                std::cout << tempString << std::endl;
-
-                // Побайтовый вывод в десятичном формате
-                std::cout << "Побайтовый вывод (dec): ";
-                for(size_t i = 0; i < refData.size(); ++i) {
-                    std::cout << (uint8_t)refData[i] << " ";
-                }
-                std::cout << std::endl;
+                std::cout << tempString << std::endl << std::endl;
             }
         }
 

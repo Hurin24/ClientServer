@@ -152,7 +152,7 @@ std::shared_ptr<TCPServerResponse> TCPServerResponse::deserialize(std::vector<ui
         int tempSize = header->dataSize - sizeof(ResponseHeader);
 
         response->m_data.resize(tempSize);
-        std::copy(data.begin() + sizeof(ResponseHeader), data.begin() + tempSize, response->m_data.begin());
+        std::copy(data.begin() + sizeof(ResponseHeader), data.begin() + sizeof(ResponseHeader) + tempSize, response->m_data.begin());
     }
 
     return response;
