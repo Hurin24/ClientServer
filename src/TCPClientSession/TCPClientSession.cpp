@@ -421,16 +421,26 @@ bool TCPClientSession::receiveData(int socketDescriptor)
         //Если TCPServerResponse валиден
         if(response)
         {
-            //Если ID полученного ответа от сервера равно ID текущего запроса
-            if(m_currentRequest.getRequestID() == response->getResponseID())
+            //TCPServerResponse валиден
+
+            //Если текущий запрос находится в состоянии WaitingResponse
+            if(m_currentRequest.getState() == TCPClientRequest::WaitingResponse)
             {
-                //Изменяем статус текущего запроса
-                m_currentRequest.setState(TCPClientRequest::ResponseReceived);
+                //Текущий запрос находится в состоянии WaitingResponse
 
-                const std::vector<uint8_t>& refData = response->getData();
+                //Если ID полученного ответа от сервера равно ID текущего запроса
+                if(m_currentRequest.getRequestID() == response->getResponseID())
+                {
+                    //ID полученного ответа от сервера равно ID текущего запроса
 
-                std::string tempString((const char*)refData.data(), refData.size());
-                std::cout << tempString << std::endl << std::endl;
+                    //Изменяем статус текущего запроса
+                    m_currentRequest.setState(TCPClientRequest::ResponseReceived);
+
+                    const std::vector<uint8_t>& refData = response->getData();
+
+                    std::string tempString((const char*)refData.data(), refData.size());
+                    std::cout << tempString << std::endl << std::endl;
+                }
             }
         }
 
@@ -549,6 +559,7 @@ bool TCPClientSession::checkAndUpdateCurrentRequest()
             //Проверяем, не вышло ли время
             if(m_currentRequest.isTimeoutExpired())
             {
+                m_currentRequest.setState(TCPClientRequest::TimedOut);
                 wasChanged = true;
             }
             break;
